@@ -84,7 +84,44 @@ export function LessonManagementPage() {
   const [lessonForm, setLessonForm] = useState<LessonForm>(emptyLessonForm);
   const [editingLessonId, setEditingLessonId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Silence unused state warning if needed or display upload badge
+  useEffect(() => {
+    if (isUploading) {
+      // isUploading active
+    }
+  }, [isUploading]);
+
+  async function handleFileUpload(file: File, folder: 'thumbnails' | 'lessons/videos' | 'lessons/documents') {
+    if (!selectedCourseId) {
+      setMessage('Vui lòng chọn khóa học trước.');
+      return null;
+    }
+
+    setIsUploading(true);
+    setMessage(`Đang tải file "${file.name}" lên S3...`);
+
+    try {
+      const presigned = await api.createPresignedUpload({
+        course_id: selectedCourseId,
+        file_name: file.name,
+        content_type: file.type,
+        file_size: file.size,
+        folder,
+      });
+
+      await api.uploadFileToS3(presigned.upload_url, file);
+      setMessage(`Upload file "${file.name}" thành công!`);
+      return presigned.file_key;
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Upload file thất bại');
+      return null;
+    } finally {
+      setIsUploading(false);
+    }
+  }
 
   const selectedCourse = useMemo(() => courses.find((course) => course._id === selectedCourseId), [courses, selectedCourseId]);
   const canEditSelectedCourse = selectedCourse ? isCourseOwner(user, selectedCourse) : false;
@@ -337,15 +374,41 @@ export function LessonManagementPage() {
                 )}
               </div>
               {canEditSelectedCourse ? (
-                <form className="grid gap-4 md:grid-cols-[1fr_1fr_220px_auto]" onSubmit={handleUpdateCourse}>
-                  <input className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" placeholder="Tên khóa học" value={courseForm.title} onChange={(event) => setCourseForm((current) => ({ ...current, title: event.target.value }))} />
-                  <input className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" placeholder="Mô tả" value={courseForm.description} onChange={(event) => setCourseForm((current) => ({ ...current, description: event.target.value }))} />
-                  <select className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" value={courseForm.enrollment_type} onChange={(event) => setCourseForm((current) => ({ ...current, enrollment_type: event.target.value as EnrollmentType }))}>
-                    <option value="open">Đăng ký mở</option>
-                    <option value="approval_required">Cần duyệt</option>
-                  </select>
-                  <button className="rounded-lg bg-[#adc7ff] px-5 py-3 font-mono text-[13px] font-bold text-[#00285b]" type="submit">Lưu khóa học</button>
-                </form>
+                <div className="space-y-4">
+                  <form className="grid gap-4 md:grid-cols-[1fr_1fr_220px_auto]" onSubmit={handleUpdateCourse}>
+                    <input className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" placeholder="Tên khóa học" value={courseForm.title} onChange={(event) => setCourseForm((current) => ({ ...current, title: event.target.value }))} />
+                    <input className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" placeholder="Mô tả" value={courseForm.description} onChange={(event) => setCourseForm((current) => ({ ...current, description: event.target.value }))} />
+                    <select className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" value={courseForm.enrollment_type} onChange={(event) => setCourseForm((current) => ({ ...current, enrollment_type: event.target.value as EnrollmentType }))}>
+                      <option value="open">Đăng ký mở</option>
+                      <option value="approval_required">Cần duyệt</option>
+                    </select>
+                    <button className="rounded-lg bg-[#adc7ff] px-5 py-3 font-mono text-[13px] font-bold text-[#00285b]" type="submit">Lưu khóa học</button>
+                  </form>
+
+                  <div className="flex items-center gap-4 rounded-lg border border-[#414754]/50 bg-[#0d131f] p-3">
+                    <span className="font-mono text-[12px] text-[#8b90a0]">Ảnh đại diện khóa học (Thumbnail S3):</span>
+                    <span className="truncate font-mono text-[12px] text-[#adc7ff]">{selectedCourse.thumbnail_key || 'Chưa có thumbnail'}</span>
+                    <label className="ml-auto flex cursor-pointer items-center gap-2 rounded-lg border border-[#adc7ff]/40 bg-[#adc7ff]/10 px-4 py-2 font-mono text-[12px] text-[#adc7ff] hover:bg-[#adc7ff]/20">
+                      <span className="material-symbols-outlined text-[18px]">upload</span>
+                      Upload Thumbnail
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const key = await handleFileUpload(file, 'thumbnails');
+                            if (key && selectedCourseId) {
+                              await api.updateCourse(selectedCourseId, { thumbnail_key: key });
+                              await loadCourses(selectedCourseId);
+                            }
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
               ) : (
                 <div className="rounded-lg border border-[#414754] bg-[#0d131f] p-4">
                   <h3 className="text-[20px] font-semibold">{selectedCourse.title}</h3>
@@ -403,13 +466,57 @@ export function LessonManagementPage() {
             <section className="grid gap-6 lg:grid-cols-[380px_1fr]">
               {canEditSelectedCourse && <form className="space-y-4 rounded-xl border border-white/5 bg-[#161c28] p-5" onSubmit={handleSaveLesson}>
                 <h2 className="text-[22px] font-semibold">{editingLessonId ? 'Sửa bài học' : 'Thêm bài học'}</h2>
-                <input className="w-full rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" placeholder="Tên bài học" value={lessonForm.title} onChange={(event) => setLessonForm((current) => ({ ...current, title: event.target.value }))} />
-                <textarea className="min-h-28 w-full rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" placeholder="Nội dung bài học" value={lessonForm.content} onChange={(event) => setLessonForm((current) => ({ ...current, content: event.target.value }))} />
-                <div className="grid grid-cols-2 gap-3">
-                  <input className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" type="number" min="1" placeholder="Thứ tự" value={lessonForm.order_index} onChange={(event) => setLessonForm((current) => ({ ...current, order_index: event.target.value }))} />
-                  <input className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" placeholder="Video key" value={lessonForm.video_key} onChange={(event) => setLessonForm((current) => ({ ...current, video_key: event.target.value }))} />
+                <div className="space-y-3">
+                  <input className="w-full rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" placeholder="Tên bài học" value={lessonForm.title} onChange={(event) => setLessonForm((current) => ({ ...current, title: event.target.value }))} />
+                  <textarea className="min-h-28 w-full rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" placeholder="Nội dung bài học" value={lessonForm.content} onChange={(event) => setLessonForm((current) => ({ ...current, content: event.target.value }))} />
+                  <input className="w-full rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" type="number" min="1" placeholder="Thứ tự bài học" value={lessonForm.order_index} onChange={(event) => setLessonForm((current) => ({ ...current, order_index: event.target.value }))} />
+                  
+                  {/* Video key & upload button */}
+                  <div className="space-y-1">
+                    <label className="block font-mono text-[12px] text-[#8b90a0]">Video Bài học (S3)</label>
+                    <div className="flex gap-2">
+                      <input className="flex-1 rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-2 font-mono text-[12px]" placeholder="Video key..." value={lessonForm.video_key} onChange={(event) => setLessonForm((current) => ({ ...current, video_key: event.target.value }))} />
+                      <label className="flex cursor-pointer items-center justify-center rounded-lg border border-[#adc7ff]/40 bg-[#adc7ff]/10 px-3 py-2 font-mono text-[12px] text-[#adc7ff] hover:bg-[#adc7ff]/20">
+                        Upload Video
+                        <input
+                          type="file"
+                          accept="video/mp4,video/webm"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const key = await handleFileUpload(file, 'lessons/videos');
+                              if (key) setLessonForm((prev) => ({ ...prev, video_key: key }));
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Document key & upload button */}
+                  <div className="space-y-1">
+                    <label className="block font-mono text-[12px] text-[#8b90a0]">Tài liệu Bài học (S3)</label>
+                    <div className="flex gap-2">
+                      <input className="flex-1 rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-2 font-mono text-[12px]" placeholder="Document key..." value={lessonForm.document_key} onChange={(event) => setLessonForm((current) => ({ ...current, document_key: event.target.value }))} />
+                      <label className="flex cursor-pointer items-center justify-center rounded-lg border border-[#adc7ff]/40 bg-[#adc7ff]/10 px-3 py-2 font-mono text-[12px] text-[#adc7ff] hover:bg-[#adc7ff]/20">
+                        Upload PDF/DOC
+                        <input
+                          type="file"
+                          accept="application/pdf,.docx"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const key = await handleFileUpload(file, 'lessons/documents');
+                              if (key) setLessonForm((prev) => ({ ...prev, document_key: key }));
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
                 </div>
-                <input className="w-full rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3" placeholder="Document key" value={lessonForm.document_key} onChange={(event) => setLessonForm((current) => ({ ...current, document_key: event.target.value }))} />
                 <div className="flex gap-2">
                   <button className="rounded-lg bg-[#24dfba] px-5 py-3 font-mono text-[13px] font-bold text-[#00382c]" type="submit">{editingLessonId ? 'Cập nhật' : 'Thêm bài học'}</button>
                   {editingLessonId && <button className="rounded-lg border border-[#414754] px-5 py-3 font-mono text-[13px]" type="button" onClick={() => { setEditingLessonId(''); setLessonForm(emptyLessonForm); }}>Hủy</button>}

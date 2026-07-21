@@ -5,6 +5,10 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [isSendingForgot, setIsSendingForgot] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -23,6 +27,22 @@ export function LoginPage() {
       setError(err instanceof Error ? err.message : 'Không thể đăng nhập');
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleForgotSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setForgotMessage('');
+    if (!forgotEmail) return;
+
+    setIsSendingForgot(true);
+    try {
+      const res = await api.forgotPassword(forgotEmail);
+      setForgotMessage(res.message || 'Đã gửi liên kết đặt lại mật khẩu đến email của bạn.');
+    } catch (err) {
+      setForgotMessage(err instanceof Error ? err.message : 'Gửi yêu cầu thất bại');
+    } finally {
+      setIsSendingForgot(false);
     }
   }
 
@@ -84,9 +104,13 @@ export function LoginPage() {
                   <label className="text-[12px] font-medium uppercase tracking-wider text-[#8b90a0]" htmlFor="password">
                     Mật khẩu
                   </label>
-                  <a className="text-[12px] font-medium text-[#adc7ff] transition-colors hover:text-[#4a8eff]" href="#">
+                  <button
+                    type="button"
+                    onClick={() => { setShowForgotModal(true); setForgotMessage(''); }}
+                    className="text-[12px] font-medium text-[#adc7ff] transition-colors hover:text-[#4a8eff]"
+                  >
                     Quên mật khẩu?
-                  </a>
+                  </button>
                 </div>
                 <div className="relative">
                   <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[20px] text-[#8b90a0]">
@@ -121,7 +145,6 @@ export function LoginPage() {
                 {!isSubmitting && <span className="material-symbols-outlined">arrow_forward</span>}
               </button>
             </form>
-
           </div>
 
           <p className="text-center text-[#c1c6d7]">
@@ -129,6 +152,62 @@ export function LoginPage() {
           </p>
         </div>
       </main>
+
+      {/* Forgot Password Modal */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl border border-[#414754] bg-[#161c28] p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[20px] font-semibold text-[#dde2f4]">Quên mật khẩu</h3>
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(false)}
+                className="text-[#8b90a0] hover:text-[#dde2f4]"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <p className="text-[14px] text-[#c1c6d7]">
+              Nhập email đăng ký tài khoản. Hệ thống sẽ gửi hướng dẫn đặt lại mật khẩu cho bạn.
+            </p>
+
+            <form onSubmit={handleForgotSubmit} className="space-y-4">
+              {forgotMessage && (
+                <div className="rounded-lg border border-[#adc7ff]/30 bg-[#adc7ff]/10 p-3 font-mono text-[13px] text-[#adc7ff]">
+                  {forgotMessage}
+                </div>
+              )}
+
+              <input
+                type="email"
+                required
+                placeholder="name@company.com"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                className="w-full rounded-lg border border-[#414754] bg-[#080e1a] px-4 py-3 text-[#dde2f4] focus:border-[#adc7ff] focus:outline-none"
+              />
+
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  className="rounded-lg border border-[#414754] px-4 py-2 font-mono text-[13px] text-[#c1c6d7]"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSendingForgot}
+                  className="rounded-lg bg-[#adc7ff] px-4 py-2 font-mono text-[13px] font-bold text-[#00285b] hover:bg-[#4a8eff] disabled:opacity-50"
+                >
+                  {isSendingForgot ? 'Đang gửi...' : 'Gửi yêu cầu'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <footer className="z-10 flex w-full flex-col items-center justify-between gap-4 px-4 py-8 text-[#8b90a0] md:flex-row md:px-8 lg:px-10">
         <span className="text-[12px]">© 2024 LearnSphere AI. All rights reserved.</span>

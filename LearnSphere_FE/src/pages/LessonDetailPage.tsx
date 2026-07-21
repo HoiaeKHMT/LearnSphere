@@ -148,13 +148,24 @@ export function LessonDetailPage() {
                   <h1 className="text-[30px] font-semibold leading-10 text-[#dde2f4]">{lesson.title}</h1>
                 </div>
                 {user?.role === 'student' && (
-                  <button
-                    className="rounded-lg bg-[#adc7ff] px-5 py-3 font-bold text-[#002e68] transition-colors hover:brightness-110"
-                    type="button"
-                    onClick={handleCompleteLesson}
-                  >
-                    Hoàn thành bài học
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="rounded-lg bg-[#adc7ff] px-5 py-3 font-bold text-[#002e68] transition-colors hover:brightness-110"
+                      type="button"
+                      onClick={handleCompleteLesson}
+                    >
+                      Hoàn thành bài học
+                    </button>
+                    {courseId && (
+                      <a
+                        className="flex items-center gap-2 rounded-lg border border-[#24dfba]/40 bg-[#24dfba]/10 px-5 py-3 font-bold text-[#24dfba] transition-colors hover:bg-[#24dfba]/20"
+                        href={`/quiz?course_id=${encodeURIComponent(courseId)}`}
+                      >
+                        <span className="material-symbols-outlined text-[20px]">quiz</span>
+                        Làm Bài Kiểm Tra (Quiz)
+                      </a>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -169,13 +180,52 @@ export function LessonDetailPage() {
                 </section>
 
                 <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="rounded-lg border border-[#414754] p-4">
-                    <p className="mb-1 font-mono text-[12px] uppercase tracking-wider text-[#8b90a0]">Video key</p>
-                    <p className="break-all text-[14px] text-[#c1c6d7]">{lesson.video_key || 'Chưa có video'}</p>
+                  <div className="flex flex-col justify-between gap-3 rounded-lg border border-[#414754] p-4">
+                    <div>
+                      <p className="mb-1 font-mono text-[12px] uppercase tracking-wider text-[#8b90a0]">Video Bài học (S3)</p>
+                      <p className="break-all font-mono text-[13px] text-[#c1c6d7]">{lesson.video_key || 'Chưa có video'}</p>
+                    </div>
+                    {lesson.video_key && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await api.createPresignedDownload(lesson._id, 'video');
+                            window.open(res.download_url, '_blank');
+                          } catch (err) {
+                            setMessage(err instanceof Error ? err.message : 'Không thể lấy liên kết tải video');
+                          }
+                        }}
+                        className="flex w-fit items-center gap-2 rounded-lg border border-[#adc7ff]/40 bg-[#adc7ff]/10 px-4 py-2 font-mono text-[12px] font-bold text-[#adc7ff] hover:bg-[#adc7ff]/20"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">play_circle</span>
+                        Xem / Tải Video
+                      </button>
+                    )}
                   </div>
-                  <div className="rounded-lg border border-[#414754] p-4">
-                    <p className="mb-1 font-mono text-[12px] uppercase tracking-wider text-[#8b90a0]">Document key</p>
-                    <p className="break-all text-[14px] text-[#c1c6d7]">{lesson.document_key || 'Chưa có tài liệu'}</p>
+
+                  <div className="flex flex-col justify-between gap-3 rounded-lg border border-[#414754] p-4">
+                    <div>
+                      <p className="mb-1 font-mono text-[12px] uppercase tracking-wider text-[#8b90a0]">Tài liệu Bài học (S3)</p>
+                      <p className="break-all font-mono text-[13px] text-[#c1c6d7]">{lesson.document_key || 'Chưa có tài liệu'}</p>
+                    </div>
+                    {lesson.document_key && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await api.createPresignedDownload(lesson._id, 'document');
+                            window.open(res.download_url, '_blank');
+                          } catch (err) {
+                            setMessage(err instanceof Error ? err.message : 'Không thể lấy liên kết tải tài liệu');
+                          }
+                        }}
+                        className="flex w-fit items-center gap-2 rounded-lg border border-[#adc7ff]/40 bg-[#adc7ff]/10 px-4 py-2 font-mono text-[12px] font-bold text-[#adc7ff] hover:bg-[#adc7ff]/20"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">description</span>
+                        Xem / Tải Tài liệu
+                      </button>
+                    )}
                   </div>
                 </section>
               </div>

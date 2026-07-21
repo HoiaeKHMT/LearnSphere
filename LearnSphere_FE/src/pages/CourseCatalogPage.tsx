@@ -28,6 +28,8 @@ export function CourseCatalogPage() {
     enrollment_type: 'open',
   });
 
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+
   async function loadCourses() {
     setIsLoading(true);
     setMessage('');
@@ -61,6 +63,18 @@ export function CourseCatalogPage() {
     void loadCourses();
   }, []);
 
+  async function uploadCourseThumbnail(courseId: string, file: File) {
+    const presigned = await api.createPresignedUpload({
+      course_id: courseId,
+      file_name: file.name,
+      content_type: file.type || 'image/jpeg',
+      file_size: file.size,
+      folder: 'thumbnails',
+    });
+    await api.uploadFileToS3(presigned.upload_url, file);
+    await api.updateCourse(courseId, { thumbnail_key: presigned.file_key });
+  }
+
   async function handleCreateCourse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canManageContent(user)) return;
@@ -76,8 +90,18 @@ export function CourseCatalogPage() {
         description: form.description.trim() || undefined,
         enrollment_type: form.enrollment_type,
       });
-      setMessage(result.message);
+
+      if (thumbnailFile && result.course?._id) {
+        try {
+          await uploadCourseThumbnail(result.course._id, thumbnailFile);
+        } catch {
+          setMessage('Tạo khóa học thành công nhưng không thể tải lên thumbnail.');
+        }
+      }
+
+      setMessage('Tạo khóa học thành công!');
       setForm({ title: '', description: '', enrollment_type: 'open' });
+      setThumbnailFile(null);
       await loadCourses();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Không thể tạo khóa học');
@@ -122,7 +146,7 @@ export function CourseCatalogPage() {
         </section>
 
         {canManageContent(user) && (
-          <form className="grid gap-4 rounded-xl border border-white/5 bg-[#161c28] p-5 md:grid-cols-[1fr_1fr_220px_auto]" onSubmit={handleCreateCourse}>
+          <form className="grid gap-4 rounded-xl border border-white/5 bg-[#161c28] p-5 md:grid-cols-[1fr_1fr_180px_auto_auto]" onSubmit={handleCreateCourse}>
             <input
               className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 text-[#dde2f4] placeholder:text-[#8b90a0]"
               placeholder="Tên khóa học"
@@ -143,6 +167,18 @@ export function CourseCatalogPage() {
               <option value="open">Đăng ký mở</option>
               <option value="approval_required">Cần duyệt</option>
             </select>
+
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 text-[13px] font-mono text-[#adc7ff] hover:bg-[#242a37]">
+              <span className="material-symbols-outlined text-[18px]">image</span>
+              <span className="truncate max-w-[100px]">{thumbnailFile ? thumbnailFile.name : 'Ảnh thumbnail'}</span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => setThumbnailFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+
             <button className="rounded-lg bg-[#adc7ff] px-5 py-3 font-mono text-[13px] font-bold text-[#00285b] disabled:opacity-60" type="submit" disabled={isCreating}>
               {isCreating ? 'Đang tạo...' : 'Tạo khóa học'}
             </button>
@@ -171,8 +207,8 @@ export function CourseCatalogPage() {
 
             return (
               <article key={course._id} className="flex h-full flex-col rounded-xl border border-white/5 bg-[#1a202c] p-4">
-                <a className="block" href={`/lesson-detail?course_id=${encodeURIComponent(course._id)}`}>
-                  <div className="relative mb-4 aspect-video overflow-hidden rounded-lg border border-[#414754] bg-[#242a37]">
+                <div className="relative mb-4 aspect-video overflow-hidden rounded-lg border border-[#414754] bg-[#242a37]">
+                  <a className="block h-full w-full" href={`/lesson-detail?course_id=${encodeURIComponent(course._id)}`}>
                     {thumbnailUrls[course._id] ? (
                       <div className="h-full w-full bg-cover bg-center" style={{ backgroundImage: `url(${thumbnailUrls[course._id]})` }} />
                     ) : (
@@ -180,7 +216,35 @@ export function CourseCatalogPage() {
                         <span className="material-symbols-outlined text-[48px]">school</span>
                       </div>
                     )}
-                  </div>
+                  </a>
+
+                  {(canManageCourse || canModerate) && (
+                    <label className="absolute top-2 right-2 flex cursor-pointer items-center gap-1.5 rounded-md bg-[#0d131f]/80 px-2.5 py-1 text-[11px] font-mono text-[#adc7ff] backdrop-blur hover:bg-[#0d131f] transition">
+                      <span className="material-symbols-outlined text-[15px]">upload</span>
+                      Đổi Thumbnail
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            try {
+                              setMessage('Đang upload thumbnail...');
+                              await uploadCourseThumbnail(course._id, file);
+                              await loadCourses();
+                              setMessage('Cập nhật Thumbnail thành công!');
+                            } catch (err) {
+                              setMessage(err instanceof Error ? err.message : 'Không thể cập nhật thumbnail');
+                            }
+                          }
+                        }}
+                      />
+                    </label>
+                  )}
+                </div>
+
+                <a className="block" href={`/lesson-detail?course_id=${encodeURIComponent(course._id)}`}>
                   <h2 className="mb-2 text-[22px] font-semibold leading-7 text-[#dde2f4]">{course.title}</h2>
                   <p className="mb-4 line-clamp-3 flex-grow text-[15px] leading-6 text-[#c1c6d7]">
                     {course.description || 'Chưa có mô tả cho khóa học này.'}
@@ -191,21 +255,31 @@ export function CourseCatalogPage() {
                     <p>Người tạo: {creator}</p>
                     <p>Đăng ký: {enrollmentType}</p>
                   </div>
-                  <button
-                    className="rounded-lg border border-[#adc7ff] px-4 py-2 font-mono text-[13px] font-bold text-[#adc7ff] transition-colors hover:bg-[#adc7ff]/10"
-                    type="button"
-                    onClick={() => {
-                      if (canStudy(user)) {
-                        void handleEnroll(course._id);
-                      } else if (canManageCourse || canModerate) {
-                        window.location.assign(`/lesson-management?course_id=${encodeURIComponent(course._id)}`);
-                      } else {
-                        window.location.assign(`/lesson-detail?course_id=${encodeURIComponent(course._id)}`);
-                      }
-                    }}
-                  >
-                    {canStudy(user) ? 'Đăng ký' : canManageCourse ? 'Quản lý nội dung' : canModerate ? 'Kiểm duyệt' : 'Xem chi tiết'}
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {canStudy(user) && (
+                      <a
+                        className="rounded-lg border border-[#24dfba]/50 px-3 py-2 font-mono text-[13px] font-bold text-[#24dfba] transition-colors hover:bg-[#24dfba]/10"
+                        href={`/quiz?course_id=${encodeURIComponent(course._id)}`}
+                      >
+                        Làm Quiz
+                      </a>
+                    )}
+                    <button
+                      className="rounded-lg border border-[#adc7ff] px-4 py-2 font-mono text-[13px] font-bold text-[#adc7ff] transition-colors hover:bg-[#adc7ff]/10"
+                      type="button"
+                      onClick={() => {
+                        if (canStudy(user)) {
+                          void handleEnroll(course._id);
+                        } else if (canManageCourse || canModerate) {
+                          window.location.assign(`/lesson-management?course_id=${encodeURIComponent(course._id)}`);
+                        } else {
+                          window.location.assign(`/lesson-detail?course_id=${encodeURIComponent(course._id)}`);
+                        }
+                      }}
+                    >
+                      {canStudy(user) ? 'Đăng ký' : canManageCourse ? 'Quản lý nội dung' : canModerate ? 'Kiểm duyệt' : 'Xem chi tiết'}
+                    </button>
+                  </div>
                 </div>
               </article>
             );

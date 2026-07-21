@@ -10,11 +10,16 @@ import { LoginPage } from './pages/LoginPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { QuizPage } from './pages/QuizPage';
 import { QuestionBuilderPage } from './pages/QuestionBuilderPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { SignupPage } from './pages/SignupPage';
 import { SystemMonitoringPage } from './pages/SystemMonitoringPage';
 
 export default function App() {
   const pathname = window.location.pathname;
+
+  if (pathname === '/reset-password') {
+    return <ResetPasswordPage />;
+  }
 
   if (pathname === '/dashboard') {
     return <DashboardPage />;

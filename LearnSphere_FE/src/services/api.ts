@@ -96,6 +96,37 @@ export type PresignedDownload = {
   expires_in: number;
 };
 
+export type PresignedUpload = {
+  upload_url: string;
+  file_key: string;
+  content_type: string;
+  file_size: number;
+  max_size_bytes: number;
+  expires_in: number;
+};
+
+export type QuizAttemptResult = {
+  attempt_id: string;
+  status: 'in_progress' | 'submitted' | 'expired';
+  score?: number;
+  total_score?: number;
+  correct_answers?: number;
+  total_questions?: number;
+  duration_seconds?: number;
+  submitted_at?: string;
+  started_at?: string;
+  expires_at?: string;
+  user_id?: string | Pick<User, '_id' | 'full_name' | 'email'>;
+  answers?: Array<{
+    question_id: string;
+    question_content: string;
+    selected_answers: Array<{ answer_id: string; content: string }>;
+    is_correct: boolean;
+    earned_point: number;
+    max_point: number;
+  }>;
+};
+
 export type AdminUser = User & {
   _id: string;
   account_status: 'pending' | 'active' | 'blocked';
@@ -358,6 +389,62 @@ export const api = {
   startQuiz(quizId: string) {
     return request<QuizStart>(`/quizzes/${quizId}/start`, {
       method: 'POST',
+    });
+  },
+
+  submitQuiz(attemptId: string, answers: Array<{ question_id: string; selected_answer_ids: string[] }>) {
+    return request<QuizAttemptResult>(`/quiz-attempts/${attemptId}/submit`, {
+      method: 'POST',
+      body: { answers },
+    });
+  },
+
+  getQuizAttempts(quizId: string) {
+    return request<QuizAttemptResult[]>(`/quizzes/${quizId}/attempts`);
+  },
+
+  getAttemptById(attemptId: string) {
+    return request<QuizAttemptResult>(`/quiz-attempts/${attemptId}`);
+  },
+
+  createPresignedUpload(body: { course_id: string; file_name: string; content_type: string; file_size: number; folder: 'thumbnails' | 'lessons/videos' | 'lessons/documents' }) {
+    return request<PresignedUpload>('/files/presigned-upload', {
+      method: 'POST',
+      body,
+    });
+  },
+
+  createPresignedDownload(lessonId: string, targetType: 'video' | 'document') {
+    return request<PresignedDownload>(`/files/presigned-download?lesson_id=${lessonId}&target_type=${targetType}`);
+  },
+
+  async uploadFileToS3(uploadUrl: string, file: File) {
+    const response = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.type,
+      },
+      body: file,
+    });
+    if (!response.ok) {
+      throw new Error(`Upload file lên S3 thất bại với status ${response.status}`);
+    }
+    return true;
+  },
+
+  forgotPassword(email: string) {
+    return request<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      auth: false,
+      body: { email },
+    });
+  },
+
+  resetPassword(token: string, password: string) {
+    return request<{ message: string }>(`/auth/reset-password/${token}`, {
+      method: 'PATCH',
+      auth: false,
+      body: { password },
     });
   },
 
