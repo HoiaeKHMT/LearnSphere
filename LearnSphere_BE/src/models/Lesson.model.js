@@ -50,6 +50,43 @@ const LessonSchema = new mongoose.Schema(
 			default: "",
 			select: false,
 		},
+		ai_summary: {
+			type: String,
+			default: "",
+			select: false,
+		},
+		ai_summary_document_key: {
+			type: String,
+			default: "",
+			select: false,
+		},
+		ai_summary_model_id: {
+			type: String,
+			default: "",
+			select: false,
+		},
+		ai_summary_stop_reason: {
+			type: String,
+			default: "",
+			select: false,
+		},
+		ai_summary_input_tokens: {
+			type: Number,
+			default: 0,
+			min: 0,
+			select: false,
+		},
+		ai_summary_output_tokens: {
+			type: Number,
+			default: 0,
+			min: 0,
+			select: false,
+		},
+		ai_summary_generated_at: {
+			type: Date,
+			default: null,
+			select: false,
+		},
 		order_index: {
 			type: Number,
 			required: true,

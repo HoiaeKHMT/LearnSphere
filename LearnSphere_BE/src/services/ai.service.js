@@ -7,8 +7,14 @@ import { invokeAI } from "./ai-provider.service.js";
 import { indexLessonFilesForAI } from "./lesson-ai-index.service.js";
 
 const MAX_MESSAGE_CHARS = 4000;
-const MAX_CONTEXT_CHARS = 30000;
-const HISTORY_LIMIT = 6;
+const readPositiveInteger = (value, fallback) => {
+	const parsed = Number(value);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+const MAX_CHAT_CONTEXT_CHARS = readPositiveInteger(process.env.AI_CHAT_CONTEXT_MAX_CHARS, 7000);
+const MAX_SUMMARY_CONTEXT_CHARS = readPositiveInteger(process.env.AI_SUMMARY_CONTEXT_MAX_CHARS, 9000);
+const MAX_QUIZ_CONTEXT_CHARS = readPositiveInteger(process.env.AI_QUIZ_CONTEXT_MAX_CHARS, 8000);
+const HISTORY_LIMIT = 2;
 
 const validateObjectId = (value, errorCode) => {
 	if (!mongoose.isValidObjectId(value)) throw new Error(errorCode);
@@ -43,7 +49,10 @@ const getLearningContext = async ({ courseId, lessonId, userId, userRole }) => {
 
 	if (lessonId !== undefined && lessonId !== null && lessonId !== "") {
 		validateObjectId(lessonId, "INVALID_LESSON_ID");
-		lesson = await Lesson.findById(lessonId).select("+ai_document_text");
+		lesson = await Lesson.findById(lessonId).select(
+			"+ai_document_text +ai_summary +ai_summary_document_key +ai_summary_model_id " +
+			"+ai_summary_stop_reason +ai_summary_input_tokens +ai_summary_output_tokens +ai_summary_generated_at",
+		);
 		if (!lesson) throw new Error("LESSON_NOT_FOUND");
 
 		if (resolvedCourseId && lesson.course_id.toString() !== resolvedCourseId.toString()) {
@@ -96,7 +105,7 @@ const selectPassages = (text, query, maxChars) => {
 		.join("\n\n");
 };
 
-const buildLessonKnowledge = (lesson, query = "") => {
+const buildLessonKnowledge = (lesson, query = "", maxContextChars = MAX_CHAT_CONTEXT_CHARS) => {
 	if (!lesson) return "";
 	const sources = [
 		["Nội dung bài học", lesson.content],
@@ -104,7 +113,7 @@ const buildLessonKnowledge = (lesson, query = "") => {
 	].filter(([, text]) => typeof text === "string" && text.trim());
 	if (!sources.length) return "";
 
-	const maxPerSource = Math.floor(MAX_CONTEXT_CHARS / sources.length) - 100;
+	const maxPerSource = Math.floor(maxContextChars / sources.length) - 100;
 	return sources
 		.map(([label, text]) => `${label}:\n${selectPassages(text, query, maxPerSource)}`)
 		.join("\n\n");
@@ -118,7 +127,7 @@ const buildContextText = (course, lesson, query) => {
 	}
 	if (lesson) {
 		parts.push(`Bài học: ${lesson.title}`);
-		const knowledge = buildLessonKnowledge(lesson, query);
+		const knowledge = buildLessonKnowledge(lesson, query, MAX_CHAT_CONTEXT_CHARS);
 		if (knowledge) parts.push(knowledge);
 	}
 
@@ -212,8 +221,8 @@ export const chatWithAI = async ({ courseId, lessonId, message, userId, userRole
 		.lean();
 
 	const messages = history.reverse().flatMap((item) => [
-		{ role: "user", content: [{ text: item.user_message }] },
-		{ role: "assistant", content: [{ text: item.ai_response }] },
+		{ role: "user", content: [{ text: item.user_message.slice(0, 800) }] },
+		{ role: "assistant", content: [{ text: item.ai_response.slice(0, 1600) }] },
 	]);
 	messages.push({ role: "user", content: [{ text: message.trim() }] });
 
@@ -281,19 +290,48 @@ export const deleteAIHistory = async ({ courseId, lessonId, userId, userRole }) 
 	return { deleted_count: result.deletedCount };
 };
 
-export const summarizeLessonWithAI = async ({ lessonId, userId, userRole }) => {
+const buildCachedSummaryResponse = (lesson) => {
+	const inputTokens = lesson.ai_summary_input_tokens ?? 0;
+	const outputTokens = lesson.ai_summary_output_tokens ?? 0;
+	return {
+		lesson_id: lesson._id,
+		summary: lesson.ai_summary,
+		model_id: lesson.ai_summary_model_id,
+		stop_reason: lesson.ai_summary_stop_reason || undefined,
+		usage: {
+			input_tokens: inputTokens,
+			output_tokens: outputTokens,
+			total_tokens: inputTokens + outputTokens,
+		},
+		cached: true,
+		generated_at: lesson.ai_summary_generated_at,
+		ai_index_status: lesson.ai_index_status,
+		ai_indexed_at: lesson.ai_indexed_at,
+		ai_index_error: lesson.ai_index_error,
+	};
+};
+
+export const summarizeLessonWithAI = async ({ lessonId, userId, userRole, forceRegenerate = false }) => {
 	let { lesson } = await getLearningContext({ lessonId, userId, userRole });
 	if (!lesson.document_key) throw new Error("LESSON_DOCUMENT_REQUIRED");
 
+	const hasCurrentSummary = Boolean(
+		lesson.ai_summary?.trim() && lesson.ai_summary_document_key === lesson.document_key,
+	);
+	if (hasCurrentSummary && !forceRegenerate) return buildCachedSummaryResponse(lesson);
+	if (userRole !== "tutor") {
+		if (forceRegenerate) throw new Error("FORBIDDEN_AI_ACTION");
+		throw new Error("AI_SUMMARY_NOT_READY");
+	}
+
 	const documentNeedsIndex = Boolean(lesson.document_key && !lesson.ai_document_text?.trim());
 	if (documentNeedsIndex) {
-		if (userRole === "student") throw new Error("AI_FILES_NOT_INDEXED");
 		await indexLessonFilesForAI(lessonId, userId, userRole);
 		({ lesson } = await getLearningContext({ lessonId, userId, userRole }));
 	}
 	if (!lesson.ai_document_text?.trim()) throw new Error("AI_DOCUMENT_NOT_INDEXED");
 
-	const documentKnowledge = selectPassages(lesson.ai_document_text, "", MAX_CONTEXT_CHARS);
+	const documentKnowledge = selectPassages(lesson.ai_document_text, "", MAX_SUMMARY_CONTEXT_CHARS);
 
 	const result = await invokeAI({
 		systemPrompt:
@@ -308,9 +346,18 @@ export const summarizeLessonWithAI = async ({ lessonId, userId, userRole }) => {
 				content: [{ text: `Tiêu đề bài học: ${lesson.title}\n\nNội dung trích xuất từ document:\n${documentKnowledge}` }],
 			},
 		],
-		maxTokens: 2200,
+		maxTokens: 1800,
 		temperature: 0.2,
 	});
+
+	lesson.ai_summary = result.text;
+	lesson.ai_summary_document_key = lesson.document_key;
+	lesson.ai_summary_model_id = result.model_id;
+	lesson.ai_summary_stop_reason = result.stop_reason ?? "";
+	lesson.ai_summary_input_tokens = result.usage?.input_tokens ?? 0;
+	lesson.ai_summary_output_tokens = result.usage?.output_tokens ?? 0;
+	lesson.ai_summary_generated_at = new Date();
+	await lesson.save();
 
 	return {
 		lesson_id: lesson._id,
@@ -318,6 +365,8 @@ export const summarizeLessonWithAI = async ({ lessonId, userId, userRole }) => {
 		model_id: result.model_id,
 		stop_reason: result.stop_reason,
 		usage: result.usage,
+		cached: false,
+		generated_at: lesson.ai_summary_generated_at,
 		ai_index_status: lesson.ai_index_status,
 		ai_indexed_at: lesson.ai_indexed_at,
 		ai_index_error: lesson.ai_index_error,
@@ -325,6 +374,7 @@ export const summarizeLessonWithAI = async ({ lessonId, userId, userRole }) => {
 };
 
 export const generateQuizWithAI = async ({ lessonId, numberOfQuestions, userId, userRole }) => {
+	if (userRole !== "tutor") throw new Error("FORBIDDEN_AI_ACTION");
 	if (
 		typeof numberOfQuestions !== "number" ||
 		!Number.isInteger(numberOfQuestions) ||
@@ -341,7 +391,7 @@ export const generateQuizWithAI = async ({ lessonId, numberOfQuestions, userId, 
 		({ lesson } = await getLearningContext({ lessonId, userId, userRole }));
 	}
 	if (lesson.document_key && !lesson.ai_document_text?.trim()) throw new Error("AI_DOCUMENT_NOT_INDEXED");
-	const lessonKnowledge = buildLessonKnowledge(lesson);
+	const lessonKnowledge = buildLessonKnowledge(lesson, "", MAX_QUIZ_CONTEXT_CHARS);
 	if (!lessonKnowledge) throw new Error("LESSON_CONTENT_EMPTY");
 
 	const result = await invokeAI({

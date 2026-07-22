@@ -3,7 +3,7 @@ import { AppHeader } from '../components/AppHeader';
 import { AppToast } from '../components/AppToast';
 import { RoleSidebar } from '../components/RoleSidebar';
 import { SphereAIButton } from '../components/SphereAIButton';
-import { api, getStoredUser, type Course, type Quiz, type QuizAttemptResult, type QuizQuestion } from '../services/api';
+import { api, getStoredUser, type Course, type Quiz, type QuizAttemptResult, type QuizDifficulty, type QuizQuestion } from '../services/api';
 
 const avatarSrc =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCZTzrqinlRFUY1sswmWehy8W9-29UTDjuk86zxLTpDBEFl9w08RLopb5YVU57I-aa19Wl9VrS0edpsQR8xNt48XxF1X06NouIMiuMjCWVN7cjl4ww1TiG2Pzg010a9XNX4VZzhTP0WiiWisWlLR1VOTkgHhhqDiv0wk-TTOJlMwCEETJlt1QJFPrKE6ZFQUNlNCvSgAloR1vE9Ne5LK0MsLRjk_Gb2QyISPjX-_TGececa2Y5py_eOfw';
@@ -23,6 +23,24 @@ function formatTime(totalSeconds: number) {
 
 type QuizStatusFilter = 'all' | 'completed' | 'not_started';
 type DifficultyFilter = 'all' | 'basic' | 'medium' | 'advanced';
+
+function getQuizDifficulty(quiz: Quiz): QuizDifficulty {
+  return quiz.difficulty ?? 'basic';
+}
+
+function getDifficultyLabel(difficulty: QuizDifficulty) {
+  if (difficulty === 'advanced') return 'Nâng cao';
+  if (difficulty === 'medium') return 'Trung bình';
+  return 'Cơ bản';
+}
+
+function wasUpdatedRecently(updatedAt?: string) {
+  if (!updatedAt) return false;
+  const updatedTime = Date.parse(updatedAt);
+  if (!Number.isFinite(updatedTime)) return false;
+  const age = Date.now() - updatedTime;
+  return age >= 0 && age <= 7 * 24 * 60 * 60 * 1000;
+}
 
 export function QuizPage() {
   const params = new URLSearchParams(window.location.search);
@@ -228,7 +246,7 @@ export function QuizPage() {
   const progressPercent = questions.length ? Math.round((answeredCount / questions.length) * 100) : 0;
   const visibleQuizzes = quizzes.filter((quiz) => {
     const completed = (attemptsByQuizId[quiz._id] ?? []).some((attempt) => attempt.status === 'submitted');
-    const difficulty = quiz.time_limit >= 60 ? 'advanced' : quiz.time_limit >= 30 ? 'medium' : 'basic';
+    const difficulty = getQuizDifficulty(quiz);
     const matchesStatus =
       quizStatusFilter === 'all' ||
       (quizStatusFilter === 'completed' ? completed : !completed);
@@ -497,7 +515,11 @@ export function QuizPage() {
 
               {!isLoading && visibleQuizzes.length > 0 && (
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                  {visibleQuizzes.map((quiz, index) => {
+                  {visibleQuizzes.map((quiz) => {
+                    const difficulty = getQuizDifficulty(quiz);
+                    const isChallenge = difficulty === 'advanced';
+                    const isNewlyUpdated = !isChallenge && wasUpdatedRecently(quiz.updatedAt);
+                    const accent = difficulty === 'advanced' ? 'orange' : difficulty === 'medium' ? 'blue' : 'green';
                     const cardStatus = user?.role === 'student'
                       ? getQuizCardStatus(quiz._id)
                       : {
@@ -511,15 +533,20 @@ export function QuizPage() {
                         ? 'bg-[#ffc080]'
                         : cardStatus.tone === 'expired'
                           ? 'bg-[#ffb4ab]'
-                          : index % 3 === 1 ? 'bg-[#24dfba]' : index % 3 === 0 ? 'bg-[#ffc080]' : 'bg-[#adc7ff]';
+                          : accent === 'orange' ? 'bg-[#ffc080]' : accent === 'green' ? 'bg-[#24dfba]' : 'bg-[#adc7ff]';
 
                     return (
-                    <article key={quiz._id} className={`group flex min-h-[380px] flex-col justify-between overflow-hidden rounded-2xl border border-[#253047] bg-[#070d19] shadow-2xl shadow-black/25 transition-all duration-300 ${index % 3 === 1 ? 'hover:border-[#24dfba]/35' : index % 3 === 0 ? 'hover:border-[#ffc080]/35' : 'hover:border-[#adc7ff]/35'}`}>
+                    <article key={quiz._id} className={`group flex min-h-[380px] flex-col justify-between overflow-hidden rounded-2xl border border-[#253047] bg-[#070d19] shadow-2xl shadow-black/25 transition-all duration-300 ${accent === 'orange' ? 'hover:border-[#ffc080]/35' : accent === 'green' ? 'hover:border-[#24dfba]/35' : 'hover:border-[#adc7ff]/35'}`}>
                       <div className="p-7">
                         <div className="flex items-center justify-between gap-3">
-                          <span className={`rounded-full px-4 py-1.5 font-mono text-[11px] font-black uppercase tracking-wider ${index % 3 === 1 ? 'bg-[#24dfba]/10 text-[#24dfba]' : index % 3 === 0 ? 'bg-[#ffc080]/10 text-[#ffc080]' : 'bg-[#adc7ff]/10 text-[#adc7ff]'}`}>
-                            {index % 3 === 1 ? 'Mới cập nhật' : index % 3 === 0 ? 'Thử thách' : 'Hệ thống'}
-                          </span>
+                          <div>
+                            {isChallenge && (
+                              <span className="rounded-full bg-[#ffc080]/10 px-4 py-1.5 font-mono text-[11px] font-black uppercase tracking-wider text-[#ffc080]">Thử thách</span>
+                            )}
+                            {isNewlyUpdated && (
+                              <span className="rounded-full bg-[#24dfba]/10 px-4 py-1.5 font-mono text-[11px] font-black uppercase tracking-wider text-[#24dfba]">Mới cập nhật</span>
+                            )}
+                          </div>
                           <span className="flex items-center gap-1.5 rounded-xl bg-[#111827] px-3 py-1.5 font-mono text-[14px] font-bold text-[#e7ecff]">
                             <span className="material-symbols-outlined text-[16px]">schedule</span>
                             {quiz.time_limit} phút
@@ -536,13 +563,12 @@ export function QuizPage() {
                           </div>
                           <div className="flex items-center gap-2 rounded-xl bg-[#111827] px-3 py-2">
                             <span className="material-symbols-outlined text-[17px] text-[#adc7ff]">military_tech</span>
-                            <span className="font-mono text-[11px] text-[#b8c1d6]">{quiz.time_limit >= 60 ? 'Nâng cao' : quiz.time_limit >= 30 ? 'Trung bình' : 'Cơ bản'}</span>
+                            <span className="font-mono text-[11px] text-[#b8c1d6]">{getDifficultyLabel(difficulty)}</span>
                           </div>
                         </div>
                         <div className="mt-5">
                           <div className="quiz-card-status mb-2 flex justify-between font-mono text-[11px]">
                             <span className="text-[#8f9bb3]">Trạng thái: {cardStatus.label}</span>
-                            <span className="text-[#8f9bb3]">Trạng thái: {user?.role === 'student' ? 'Chưa bắt đầu' : selectedQuizId === quiz._id ? 'Đang xem' : 'Sẵn sàng'}</span>
                             <span className={cardStatus.tone === 'completed' ? 'text-[#24dfba]' : cardStatus.tone === 'active' ? 'text-[#ffc080]' : cardStatus.tone === 'expired' ? 'text-[#ffb4ab]' : 'text-[#8f9bb3]'}>{cardStatus.percent}%</span>
                           </div>
                           <div className="h-2 overflow-hidden rounded-full bg-[#111827]">
@@ -557,7 +583,7 @@ export function QuizPage() {
                             type="button"
                             onClick={() => void handleStartQuiz(quiz._id)}
                             disabled={isStarting}
-                            className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 font-mono text-[15px] font-black text-[#00285b] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-50 ${index % 3 === 1 ? 'bg-[#24dfba]' : 'bg-[#adc7ff]'}`}
+                            className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 font-mono text-[15px] font-black text-[#00285b] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-50 ${accent === 'orange' ? 'bg-[#ffc080]' : accent === 'green' ? 'bg-[#24dfba]' : 'bg-[#adc7ff]'}`}
                           >
                             <span className="material-symbols-outlined text-[20px]">play_circle</span>
                             {isStarting && selectedQuizId === quiz._id ? 'Đang khởi tạo...' : 'Bắt đầu làm bài'}

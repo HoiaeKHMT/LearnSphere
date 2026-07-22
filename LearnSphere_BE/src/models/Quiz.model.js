@@ -63,6 +63,11 @@ const QuizSchema = new mongoose.Schema(
 			default: 15,
 			min: 1,
 		},
+		difficulty: {
+			type: String,
+			enum: ["basic", "medium", "advanced"],
+			default: "basic",
+		},
 		questions: {
 			type: [QuestionSchema],
 			default: [],

@@ -3,8 +3,8 @@ import { AppHeader } from '../components/AppHeader';
 import { AppToast } from '../components/AppToast';
 import { RoleSidebar } from '../components/RoleSidebar';
 import { SphereAIButton } from '../components/SphereAIButton';
-import { canManageContent, getRoleLabel, getRoleNav, isCourseOwner } from '../lib/roleAccess';
-import { api, getAIErrorMessage, getStoredUser, type Course, type Lesson, type QuestionInput, type Quiz, type QuizQuestion } from '../services/api';
+import { canManageContent, getCourseOwnerId, getRoleLabel, getRoleNav, isCourseOwner } from '../lib/roleAccess';
+import { api, getAIErrorMessage, getStoredUser, type AdminUser, type Course, type Lesson, type QuestionInput, type Quiz, type QuizDifficulty, type QuizQuestion } from '../services/api';
 
 type QuestionForm = {
   content: string;
@@ -17,6 +17,7 @@ type QuizForm = {
   title: string;
   description: string;
   time_limit: string;
+  difficulty: QuizDifficulty;
 };
 
 type BuilderMode = 'ai' | 'manual';
@@ -38,6 +39,7 @@ const emptyQuizForm: QuizForm = {
   title: '',
   description: '',
   time_limit: '15',
+  difficulty: 'basic',
 };
 
 const fieldClass =
@@ -67,6 +69,8 @@ export function QuestionBuilderPage() {
   const user = getStoredUser();
   const navItems = getRoleNav(user);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [tutors, setTutors] = useState<AdminUser[]>([]);
+  const [selectedTutorId, setSelectedTutorId] = useState('');
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
@@ -79,6 +83,7 @@ export function QuestionBuilderPage() {
   const [aiQuestionCount, setAIQuestionCount] = useState('5');
   const [builderMode, setBuilderMode] = useState<BuilderMode>('ai');
   const [isCreateQuizOpen, setIsCreateQuizOpen] = useState(false);
+  const [editingQuizId, setEditingQuizId] = useState('');
   const [isLoadingCourses, setIsLoadingCourses] = useState(true);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
@@ -89,26 +94,45 @@ export function QuestionBuilderPage() {
   const [message, setMessage] = useState('');
 
   const selectedQuiz = useMemo(() => quizzes.find((quiz) => quiz._id === selectedQuizId), [quizzes, selectedQuizId]);
+  const visibleCourses = useMemo(
+    () => user?.role === 'admin' ? courses.filter((course) => getCourseOwnerId(course) === selectedTutorId) : courses,
+    [courses, selectedTutorId, user?.role],
+  );
   const selectedCourse = useMemo(() => courses.find((course) => course._id === selectedCourseId), [courses, selectedCourseId]);
-  const canEditQuizDetail = canManageContent(user);
+  const canViewQuizDetail = canManageContent(user);
+  const canEditQuizDetail = user?.role === 'tutor' && Boolean(selectedCourse && isCourseOwner(user, selectedCourse));
   const correctCount = questionForm.answers.filter((answer) => answer.is_correct && answer.content.trim()).length;
 
   useEffect(() => {
-    if (!canEditQuizDetail) return;
+    if (!canViewQuizDetail) return;
 
     setIsLoadingCourses(true);
-    api.getCourses()
-      .then((items) => {
+    Promise.all([
+      api.getCourses(),
+      user?.role === 'admin' ? api.getUsers({ role: 'tutor' }) : Promise.resolve([] as AdminUser[]),
+    ])
+      .then(([items, tutorItems]) => {
         const availableCourses = user?.role === 'admin' ? items : items.filter((course) => isCourseOwner(user, course));
+        const requestedCourse = availableCourses.find((course) => course._id === selectedCourseId);
+        const nextTutorId = user?.role === 'admin'
+          ? (requestedCourse ? getCourseOwnerId(requestedCourse) : '')
+          : '';
+        const nextVisibleCourses = user?.role === 'admin'
+          ? availableCourses.filter((course) => getCourseOwnerId(course) === nextTutorId)
+          : availableCourses;
+        const nextCourseId = nextVisibleCourses.some((course) => course._id === selectedCourseId)
+          ? selectedCourseId
+          : nextVisibleCourses[0]?._id ?? '';
+
         setCourses(availableCourses);
-        if (!selectedCourseId && availableCourses[0]) {
-          setSelectedCourseId(availableCourses[0]._id);
-        }
+        setTutors(tutorItems);
+        setSelectedTutorId(nextTutorId);
+        setSelectedCourseId(nextCourseId);
       })
       .catch((err) => setMessage(err instanceof Error ? err.message : 'Không thể tải khóa học'))
       .finally(() => setIsLoadingCourses(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canEditQuizDetail, user?.id, user?._id]);
+  }, [canViewQuizDetail, user?.id, user?._id]);
 
   useEffect(() => {
     if (!selectedCourseId) {
@@ -122,8 +146,7 @@ export function QuestionBuilderPage() {
     api.getCourseQuizzes(selectedCourseId)
       .then((items) => {
         setQuizzes(items);
-        const nextQuizId = items.some((quiz) => quiz._id === selectedQuizId) ? selectedQuizId : items[0]?._id ?? '';
-        setSelectedQuizId(nextQuizId);
+        setSelectedQuizId((current) => items.some((quiz) => quiz._id === current) ? current : items[0]?._id ?? '');
       })
       .catch((err) => {
         setQuizzes([]);
@@ -131,7 +154,7 @@ export function QuestionBuilderPage() {
         setMessage(err instanceof Error ? err.message : 'Không thể tải quiz của khóa học');
       })
       .finally(() => setIsLoadingQuizzes(false));
-  }, [selectedCourseId, selectedQuizId]);
+  }, [selectedCourseId]);
 
   useEffect(() => {
     if (!selectedCourseId) {
@@ -226,8 +249,38 @@ export function QuestionBuilderPage() {
     }
   }
 
+  function openCreateQuiz() {
+    if (!canEditQuizDetail) return;
+    setEditingQuizId('');
+    setQuizForm(emptyQuizForm);
+    setIsCreateQuizOpen(true);
+  }
+
+  function openEditQuiz() {
+    if (!canEditQuizDetail || !selectedQuiz) return;
+    setEditingQuizId(selectedQuiz._id);
+    setQuizForm({
+      title: selectedQuiz.title,
+      description: selectedQuiz.description ?? '',
+      time_limit: String(selectedQuiz.time_limit),
+      difficulty: selectedQuiz.difficulty ?? 'basic',
+    });
+    setIsCreateQuizOpen(true);
+  }
+
+  function closeQuizForm() {
+    if (isCreatingQuiz) return;
+    setIsCreateQuizOpen(false);
+    setEditingQuizId('');
+    setQuizForm(emptyQuizForm);
+  }
+
   async function handleCreateQuiz(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canEditQuizDetail) {
+      setMessage('Admin chỉ được xem quiz, không được chỉnh sửa nội dung.');
+      return;
+    }
 
     if (!selectedCourseId) {
       setMessage('Vui lòng chọn khóa học trước khi tạo quiz.');
@@ -247,19 +300,24 @@ export function QuestionBuilderPage() {
 
     setIsCreatingQuiz(true);
     try {
-      const result = await api.createQuiz(selectedCourseId, {
+      const payload = {
         title: quizForm.title.trim(),
         description: quizForm.description.trim() || undefined,
         time_limit: timeLimit,
-      });
+        difficulty: quizForm.difficulty,
+      };
+      const result = editingQuizId
+        ? await api.updateQuiz(editingQuizId, payload)
+        : await api.createQuiz(selectedCourseId, payload);
       setMessage(result.message);
       setQuizForm(emptyQuizForm);
 	  setIsCreateQuizOpen(false);
       const nextQuizzes = await api.getCourseQuizzes(selectedCourseId);
       setQuizzes(nextQuizzes);
       setSelectedQuizId(result.quiz._id);
+      setEditingQuizId('');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Không thể tạo quiz');
+      setMessage(err instanceof Error ? err.message : 'Không thể lưu quiz');
     } finally {
       setIsCreatingQuiz(false);
     }
@@ -267,6 +325,7 @@ export function QuestionBuilderPage() {
 
   async function handleCreateQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canEditQuizDetail) return;
 
     if (!selectedQuizId) {
       setMessage('Vui lòng chọn quiz cần tạo câu hỏi.');
@@ -316,6 +375,7 @@ export function QuestionBuilderPage() {
   }
 
   async function handleDeleteQuestion(questionId: string) {
+    if (!canEditQuizDetail) return;
     if (!selectedQuizId) return;
     const confirmed = window.confirm('Xóa câu hỏi này khỏi quiz?');
     if (!confirmed) return;
@@ -330,6 +390,7 @@ export function QuestionBuilderPage() {
   }
 
   async function handleGenerateWithAI() {
+	if (!canEditQuizDetail) return;
 	if (!selectedQuizId) {
 	  setMessage('Vui lòng chọn hoặc tạo quiz trước khi sinh câu hỏi bằng AI.');
 	  return;
@@ -368,6 +429,7 @@ export function QuestionBuilderPage() {
   }
 
   async function handleSaveGeneratedQuestions() {
+    if (!canEditQuizDetail) return;
     if (!selectedQuizId || !generatedQuestions.length || isSavingGenerated) {
       if (!selectedQuizId) setMessage('Vui lòng chọn quiz nhận các câu hỏi AI.');
       return;
@@ -448,7 +510,7 @@ export function QuestionBuilderPage() {
     }));
   }
 
-  if (!canEditQuizDetail) {
+  if (!canViewQuizDetail) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0d131f] px-4 text-[#dde2f4]">
         <section className="max-w-md rounded-2xl border border-[#354055] bg-[#151c2a] p-8 text-center shadow-2xl shadow-black/30">
@@ -468,7 +530,7 @@ export function QuestionBuilderPage() {
       <AppHeader user={user} roleLabel={getRoleLabel(user?.role)} avatarSrc={avatarSrc} />
       <AppToast message={message} tone="warning" onClose={() => setMessage('')} />
 
-      {isCreateQuizOpen && (
+      {isCreateQuizOpen && canEditQuizDetail && (
         <div className="fixed inset-0 z-50 flex overflow-y-auto bg-black/75 p-4 backdrop-blur-sm">
           <form
             className="relative m-auto w-full max-w-[560px] rounded-2xl border border-[#ffcc7a]/30 bg-[#111827] p-5 shadow-2xl shadow-black/50 sm:p-6"
@@ -477,9 +539,9 @@ export function QuestionBuilderPage() {
             <button
               className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full border border-[#354055] text-[#9da8bd] transition hover:border-[#ffb4ab]/50 hover:bg-[#ffb4ab]/10 hover:text-[#ffb4ab] disabled:cursor-not-allowed disabled:opacity-50"
               type="button"
-              aria-label="Đóng form tạo quiz"
+              aria-label="Đóng form quiz"
               disabled={isCreatingQuiz}
-              onClick={() => setIsCreateQuizOpen(false)}
+              onClick={closeQuizForm}
             >
               <span className="material-symbols-outlined">close</span>
             </button>
@@ -489,7 +551,7 @@ export function QuestionBuilderPage() {
                 <span className="material-symbols-outlined">add_notes</span>
               </span>
               <div className="min-w-0">
-                <h2 className="text-[22px] font-extrabold text-white">Tạo quiz mới</h2>
+                <h2 className="text-[22px] font-extrabold text-white">{editingQuizId ? 'Sửa thông tin quiz' : 'Tạo quiz mới'}</h2>
                 <p className="truncate text-[13px] text-[#8f9bb3]">
                   {selectedCourse?.title ?? 'Chọn khóa học trước khi tạo quiz'}
                 </p>
@@ -516,24 +578,38 @@ export function QuestionBuilderPage() {
                   onChange={(event) => setQuizForm((current) => ({ ...current, description: event.target.value }))}
                 />
               </label>
-              <label className="flex flex-col gap-2">
-                <span className={labelClass}>Thời lượng (phút)</span>
-                <input
-                  className={fieldClass}
-                  type="number"
-                  min="1"
-                  placeholder="15"
-                  value={quizForm.time_limit}
-                  onChange={(event) => setQuizForm((current) => ({ ...current, time_limit: event.target.value }))}
-                />
-              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-2">
+                  <span className={labelClass}>Thời lượng (phút)</span>
+                  <input
+                    className={fieldClass}
+                    type="number"
+                    min="1"
+                    placeholder="15"
+                    value={quizForm.time_limit}
+                    onChange={(event) => setQuizForm((current) => ({ ...current, time_limit: event.target.value }))}
+                  />
+                </label>
+                <label className="flex flex-col gap-2">
+                  <span className={labelClass}>Độ khó</span>
+                  <select
+                    className={fieldClass}
+                    value={quizForm.difficulty}
+                    onChange={(event) => setQuizForm((current) => ({ ...current, difficulty: event.target.value as QuizDifficulty }))}
+                  >
+                    <option value="basic">Cơ bản</option>
+                    <option value="medium">Trung bình</option>
+                    <option value="advanced">Nâng cao</option>
+                  </select>
+                </label>
+              </div>
 
               <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
                 <button
                   className="rounded-xl border border-[#46536b] px-5 py-3 font-mono text-[12px] font-black uppercase tracking-wide text-[#c5cee3] transition hover:bg-[#1a2435] disabled:cursor-not-allowed disabled:opacity-50"
                   type="button"
                   disabled={isCreatingQuiz}
-                  onClick={() => setIsCreateQuizOpen(false)}
+                  onClick={closeQuizForm}
                 >
                   Hủy
                 </button>
@@ -543,7 +619,7 @@ export function QuestionBuilderPage() {
                   disabled={!selectedCourseId || isCreatingQuiz}
                 >
                   <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                  {isCreatingQuiz ? 'Đang tạo...' : 'Tạo quiz'}
+                  {isCreatingQuiz ? 'Đang lưu...' : editingQuizId ? 'Lưu thay đổi' : 'Tạo quiz'}
                 </button>
               </div>
             </div>
@@ -563,97 +639,196 @@ export function QuestionBuilderPage() {
                   <span className="material-symbols-outlined">settings_applications</span>
                 </span>
                 <div>
-                  <h2 className="text-[22px] font-extrabold">Cài đặt bài thi</h2>
-                  <p className="text-[13px] text-[#8f9bb3]">Chọn khóa học và quiz đang biên soạn</p>
+                  <h2 className="text-[22px] font-extrabold">Quản lý quiz</h2>
+                  <p className="text-[13px] text-[#8f9bb3]">{user?.role === 'admin' ? 'Chọn giảng viên và khóa học để kiểm tra quiz' : 'Chọn khóa học cần biên soạn'}</p>
                 </div>
               </div>
 
               <div className="space-y-4">
+                {user?.role === 'admin' && (
+                  <label className="flex flex-col gap-2">
+                    <span className={labelClass}>Giảng viên</span>
+                    <select
+                      className={fieldClass}
+                      value={selectedTutorId}
+                      onChange={(event) => {
+                        const tutorId = event.target.value;
+                        const firstCourse = courses.find((course) => getCourseOwnerId(course) === tutorId);
+                        setSelectedTutorId(tutorId);
+                        setSelectedCourseId(firstCourse?._id ?? '');
+                        setSelectedQuizId('');
+                      }}
+                    >
+                      <option value="">Chọn giảng viên</option>
+                      {tutors.map((tutor) => (
+                        <option key={tutor._id} value={tutor._id}>{tutor.full_name}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
                 <label className="flex flex-col gap-2">
                   <span className={labelClass}>Khóa học liên quan</span>
                   <select
                     className={fieldClass}
                     value={selectedCourseId}
+                    disabled={user?.role === 'admin' && !selectedTutorId}
                     onChange={(event) => {
                       setSelectedCourseId(event.target.value);
                       setSelectedQuizId('');
                     }}
                   >
                     <option value="">{isLoadingCourses ? 'Đang tải khóa học...' : 'Chọn khóa học'}</option>
-                    {courses.map((course) => (
+                    {visibleCourses.map((course) => (
                       <option key={course._id} value={course._id}>{course.title}</option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="flex flex-col gap-2">
-                  <span className={labelClass}>Quiz cần tạo chi tiết</span>
-                  <select
-                    className={fieldClass}
-                    value={selectedQuizId}
-                    onChange={(event) => setSelectedQuizId(event.target.value)}
-                    disabled={!selectedCourseId || isLoadingQuizzes}
-                  >
-                    <option value="">{isLoadingQuizzes ? 'Đang tải quiz...' : 'Chọn quiz'}</option>
-                    {quizzes.map((quiz) => (
-                      <option key={quiz._id} value={quiz._id}>{quiz.title}</option>
                     ))}
                   </select>
                 </label>
 
                 <div className="grid grid-cols-2 gap-3">
                   <article className="rounded-xl border border-[#354055] bg-[#070d19] p-4">
-                    <p className={labelClass}>Thời lượng</p>
-                    <p className="mt-2 text-[22px] font-black text-white">{selectedQuiz ? `${selectedQuiz.time_limit} phút` : '--'}</p>
+                    <p className={labelClass}>Quiz</p>
+                    <p className="mt-2 text-[22px] font-black text-[#ffcc7a]">{quizzes.length}</p>
                   </article>
                   <article className="rounded-xl border border-[#354055] bg-[#070d19] p-4">
-                    <p className={labelClass}>Số câu hỏi</p>
-                    <p className="mt-2 text-[22px] font-black text-[#24dfba]">{questions.length}</p>
+                    <p className={labelClass}>Bài học</p>
+                    <p className="mt-2 text-[22px] font-black text-[#24dfba]">{lessons.length}</p>
                   </article>
                 </div>
 
-                {!courses.length && !isLoadingCourses && (
+                {selectedQuiz && (
+                  <article className="rounded-xl border border-[#adc7ff]/25 bg-[#adc7ff]/5 p-4">
+                    <p className={labelClass}>{canEditQuizDetail ? 'Đang biên soạn' : 'Đang xem'}</p>
+                    <h3 className="mt-2 break-words text-[17px] font-extrabold text-white">{selectedQuiz.title}</h3>
+                    <div className="mt-3 flex flex-wrap gap-2 font-mono text-[10px]">
+                      <span className="rounded-full bg-[#070d19] px-2.5 py-1 text-[#adc7ff]">{selectedQuiz.time_limit} phút</span>
+                      <span className="rounded-full bg-[#070d19] px-2.5 py-1 text-[#24dfba]">{questions.length} câu</span>
+                    </div>
+                  </article>
+                )}
+
+                {!visibleCourses.length && !isLoadingCourses && (
                   <div className="rounded-xl border border-dashed border-[#46536b] bg-[#070d19] p-4 text-[14px] text-[#b8c1d6]">
-                    Bạn chưa có khóa học nào để tạo chi tiết quiz.
+                    {user?.role === 'admin'
+                      ? (selectedTutorId ? 'Giảng viên này chưa có khóa học để kiểm tra quiz.' : 'Chọn giảng viên để xem khóa học và quiz.')
+                      : 'Bạn chưa có khóa học nào để tạo chi tiết quiz.'}
                   </div>
                 )}
 
                 {selectedCourse && !quizzes.length && !isLoadingQuizzes && (
                   <div className="rounded-xl border border-dashed border-[#46536b] bg-[#070d19] p-4 text-[14px] text-[#b8c1d6]">
-                    Khóa học này chưa có quiz. Tạo quiz bên dưới để bắt đầu thêm câu hỏi.
+                    Khóa học này chưa có quiz. Hãy tạo quiz đầu tiên ở khu vực bên phải.
                   </div>
                 )}
               </div>
             </div>
-
-			<button
-			  className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#ffcc7a]/35 bg-[#ffcc7a]/10 px-4 py-3 font-mono text-[12px] font-black uppercase tracking-wide text-[#ffcc7a] transition hover:bg-[#ffcc7a]/15 disabled:cursor-not-allowed disabled:opacity-50"
-			  type="button"
-			  disabled={!selectedCourseId}
-			  onClick={() => setIsCreateQuizOpen(true)}
-			>
-			  <span className="material-symbols-outlined text-[18px]">add_circle</span>
-			  Tạo quiz mới
-			</button>
           </section>
 
           <section className="flex min-w-0 flex-1 flex-col gap-5">
+            <section className="overflow-hidden rounded-2xl border border-[#253047] bg-[#111827]/92 shadow-xl shadow-black/20">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#253047] px-5 py-4">
+                <div>
+                  <h2 className="text-[22px] font-extrabold text-white">Quiz trong khóa</h2>
+                  <p className="text-[13px] text-[#8f9bb3]">{selectedCourse?.title ?? 'Chọn khóa học để xem danh sách quiz'}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-[#070d19] px-3 py-1 font-mono text-[12px] text-[#ffcc7a]">
+                    {quizzes.length} quiz
+                  </span>
+                  {canEditQuizDetail && (
+                  <button
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#adc7ff] px-4 py-2 font-mono text-[11px] font-black uppercase tracking-wide text-[#00285b] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    disabled={!selectedCourseId}
+                    onClick={openCreateQuiz}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                    Tạo quiz
+                  </button>
+                  )}
+                </div>
+              </div>
+
+              {isLoadingQuizzes ? (
+                <div className="p-8 text-center font-mono text-[12px] text-[#8f9bb3]">Đang tải danh sách quiz...</div>
+              ) : !quizzes.length ? (
+                <div className="flex flex-col items-center justify-center p-10 text-center">
+                  <span className="material-symbols-outlined mb-3 text-[52px] text-[#657188]">quiz</span>
+                  <h3 className="text-[22px] font-bold text-white">Chưa có quiz nào</h3>
+                  <p className="mt-2 max-w-md text-[14px] leading-6 text-[#8f9bb3]">
+                    {canEditQuizDetail ? 'Tạo quiz đầu tiên, sau đó thêm câu hỏi thủ công hoặc sinh câu hỏi từ tài liệu bằng AI.' : 'Khóa học này chưa có quiz để xem.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-[#253047]">
+                  {quizzes.map((quiz, index) => {
+                    const isSelected = quiz._id === selectedQuizId;
+                    return (
+                      <button
+                        key={quiz._id}
+                        className={`group/quiz flex w-full flex-col gap-3 p-5 text-left transition sm:flex-row sm:items-center sm:justify-between ${isSelected ? 'bg-[#adc7ff]/10' : 'hover:bg-[#151e2d]'}`}
+                        type="button"
+                        onClick={() => {
+                          setSelectedQuizId(quiz._id);
+                          setGeneratedQuestions([]);
+                        }}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-3">
+                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-mono text-[12px] font-black ${isSelected ? 'bg-[#adc7ff] text-[#00285b]' : 'bg-[#253047] text-[#adc7ff]'}`}>
+                              {isSelected ? <span className="material-symbols-outlined text-[18px]">check</span> : String(index + 1).padStart(2, '0')}
+                            </span>
+                            <div className="min-w-0">
+                              <h3 className={`truncate text-[18px] font-bold transition ${isSelected ? 'text-[#adc7ff]' : 'text-white group-hover/quiz:text-[#adc7ff]'}`}>{quiz.title}</h3>
+                              <p className="mt-1 line-clamp-1 text-[13px] text-[#8f9bb3]">{quiz.description || 'Chưa có mô tả'}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3 pl-12 sm:pl-0">
+                          <span className="rounded-full bg-[#070d19] px-3 py-1 font-mono text-[11px] text-[#adc7ff]">
+                            {quiz.difficulty === 'advanced' ? 'Nâng cao' : quiz.difficulty === 'medium' ? 'Trung bình' : 'Cơ bản'}
+                          </span>
+                          <span className="rounded-full bg-[#070d19] px-3 py-1 font-mono text-[11px] text-[#ffcc7a]">{quiz.time_limit} phút</span>
+                          <span className={`material-symbols-outlined text-[20px] transition ${isSelected ? 'text-[#adc7ff]' : 'text-[#657188] group-hover/quiz:translate-x-1 group-hover/quiz:text-[#adc7ff]'}`}>arrow_forward</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {selectedQuiz ? (
+            <>
             <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-[#253047] bg-[#111827]/92 p-5 shadow-xl shadow-black/20 xl:flex-row xl:items-center">
               <div className="flex items-center gap-3">
                 <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#24dfba]/12 text-[#24dfba]">
                   <span className="material-symbols-outlined">format_list_bulleted</span>
                 </span>
                 <div>
-                  <h2 className="text-[24px] font-extrabold text-white">Trình xây dựng câu hỏi</h2>
+                  <h2 className="text-[24px] font-extrabold text-white">{canEditQuizDetail ? 'Trình xây dựng câu hỏi' : 'Chi tiết câu hỏi'}</h2>
                   <p className="text-[13px] text-[#8f9bb3]">{selectedQuiz?.title ?? 'Chọn quiz để bắt đầu thêm câu hỏi'}</p>
                 </div>
               </div>
-			  <div className="flex flex-wrap gap-2 font-mono text-[11px]">
+			  <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
 				<span className="rounded-full border border-[#adc7ff]/25 bg-[#adc7ff]/10 px-3 py-1.5 text-[#adc7ff]">{selectedQuiz ? `${selectedQuiz.time_limit} phút` : 'Chưa chọn quiz'}</span>
+				<span className="rounded-full border border-[#ffcc7a]/25 bg-[#ffcc7a]/10 px-3 py-1.5 text-[#ffcc7a]">{selectedQuiz.difficulty === 'advanced' ? 'Nâng cao' : selectedQuiz.difficulty === 'medium' ? 'Trung bình' : 'Cơ bản'}</span>
 				<span className="rounded-full border border-[#24dfba]/25 bg-[#24dfba]/10 px-3 py-1.5 text-[#24dfba]">{questions.length} câu đã lưu</span>
+				{canEditQuizDetail && (
+				<button
+				  className="inline-flex items-center gap-1.5 rounded-lg border border-[#adc7ff]/35 px-3 py-1.5 font-bold text-[#adc7ff] transition hover:bg-[#adc7ff]/10"
+				  type="button"
+				  onClick={openEditQuiz}
+				>
+				  <span className="material-symbols-outlined text-[16px]">edit</span>
+				  Sửa quiz
+				</button>
+				)}
 			  </div>
             </div>
 
+			{canEditQuizDetail && (
+			<>
 			<div className="grid grid-cols-2 rounded-2xl border border-[#253047] bg-[#111827]/92 p-1.5 shadow-xl shadow-black/20">
 			  <button
 				className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-mono text-[12px] font-black transition ${builderMode === 'ai' ? 'bg-[#fe9800] text-[#3b2300]' : 'text-[#9da8bd] hover:bg-[#1a2435] hover:text-white'}`}
@@ -920,6 +1095,8 @@ export function QuestionBuilderPage() {
               </div>
             </form>
 			)}
+			</>
+			)}
 
             <section className="overflow-hidden rounded-2xl border border-[#253047] bg-[#111827]/92 shadow-xl shadow-black/20">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#253047] px-5 py-4">
@@ -934,7 +1111,9 @@ export function QuestionBuilderPage() {
                 <div className="flex flex-col items-center justify-center p-10 text-center">
                   <span className="material-symbols-outlined mb-3 text-[52px] text-[#657188]">quiz</span>
                   <h3 className="text-[24px] font-bold text-white">Chưa có câu hỏi nào</h3>
-                  <p className="mt-2 max-w-md text-[14px] leading-6 text-[#8f9bb3]">Sau khi chọn quiz, hãy thêm câu hỏi đầu tiên để học viên có thể làm bài kiểm tra.</p>
+                  <p className="mt-2 max-w-md text-[14px] leading-6 text-[#8f9bb3]">
+                    {canEditQuizDetail ? 'Hãy thêm câu hỏi đầu tiên để học viên có thể làm bài kiểm tra.' : 'Quiz này chưa có câu hỏi.'}
+                  </p>
                 </div>
               ) : (
                 <div className="divide-y divide-[#253047]">
@@ -955,6 +1134,7 @@ export function QuestionBuilderPage() {
                           </div>
                           <h4 className="break-words text-[18px] font-bold leading-7 text-white">{question.content}</h4>
                         </div>
+                        {canEditQuizDetail && (
                         <button
                           className="rounded-lg border border-[#ffb4ab]/40 px-4 py-2 font-mono text-[12px] font-bold text-[#ffb4ab] transition hover:bg-[#ffb4ab]/10"
                           type="button"
@@ -962,6 +1142,7 @@ export function QuestionBuilderPage() {
                         >
                           Xóa
                         </button>
+                        )}
                       </div>
                       <div className="mt-4 grid gap-2 sm:grid-cols-2">
                         {question.answers.map((answer) => (
@@ -982,6 +1163,14 @@ export function QuestionBuilderPage() {
                 </div>
               )}
             </section>
+            </>
+            ) : user?.role !== 'admin' ? (
+              <section className="rounded-2xl border border-dashed border-[#354055] bg-[#111827]/70 p-10 text-center shadow-xl shadow-black/15">
+                <span className="material-symbols-outlined mb-3 text-[52px] text-[#657188]">touch_app</span>
+                <h2 className="text-[22px] font-bold text-white">Chọn một quiz để biên soạn</h2>
+                <p className="mx-auto mt-2 max-w-md text-[14px] leading-6 text-[#8f9bb3]">Danh sách câu hỏi và công cụ tạo bằng AI sẽ xuất hiện sau khi bạn chọn quiz phía trên.</p>
+              </section>
+            ) : null}
           </section>
 		  </div>
 		</div>

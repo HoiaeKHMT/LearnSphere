@@ -3,7 +3,7 @@ import { AppHeader } from '../components/AppHeader';
 import { AppToast } from '../components/AppToast';
 import { SphereAIButton } from '../components/SphereAIButton';
 import { RoleSidebar } from '../components/RoleSidebar';
-import { canManageContent, canModerateCourse, canStudy, getRoleLabel, getRoleNav, isCourseOwner } from '../lib/roleAccess';
+import { canModerateCourse, canStudy, getRoleLabel, getRoleNav, isCourseOwner } from '../lib/roleAccess';
 import { api, getStoredUser, type Course, type CourseProgress, type Enrollment, type EnrollmentType } from '../services/api';
 
 const avatarSrc =
@@ -40,6 +40,7 @@ export function CourseCatalogPage() {
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [isCreateCourseOpen, setIsCreateCourseOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('popular');
@@ -137,7 +138,7 @@ export function CourseCatalogPage() {
 
   async function handleCreateCourse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canManageContent(user)) return;
+    if (user?.role !== 'tutor') return;
     if (!form.title.trim()) {
       setMessage('Vui lòng nhập tên khóa học.');
       return;
@@ -162,12 +163,20 @@ export function CourseCatalogPage() {
       setMessage('Tạo khóa học thành công!');
       setForm({ title: '', description: '', enrollment_type: 'open' });
       setThumbnailFile(null);
+      setIsCreateCourseOpen(false);
       await loadCourses();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Không thể tạo khóa học');
     } finally {
       setIsCreating(false);
     }
+  }
+
+  function closeCreateCourseForm() {
+    if (isCreating) return;
+    setIsCreateCourseOpen(false);
+    setForm({ title: '', description: '', enrollment_type: 'open' });
+    setThumbnailFile(null);
   }
 
   async function handleEnroll(courseId: string) {
@@ -260,6 +269,103 @@ export function CourseCatalogPage() {
       <AppHeader user={user} roleLabel={getRoleLabel(user?.role)} avatarSrc={avatarSrc} />
       <RoleSidebar activePath="/courses" items={navItems} user={user} />
 
+      {user?.role === 'tutor' && isCreateCourseOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6">
+          <form
+            className="max-h-[90vh] w-full max-w-[640px] overflow-y-auto rounded-2xl border border-[#354055] bg-[#111827] shadow-2xl shadow-black/50"
+            onSubmit={handleCreateCourse}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-[#253047] px-5 py-4 sm:px-6">
+              <div>
+                <span className="inline-flex items-center gap-2 rounded-full border border-[#adc7ff]/25 bg-[#adc7ff]/10 px-3 py-1 font-mono text-[11px] font-bold uppercase tracking-wider text-[#adc7ff]">
+                  <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                  Khóa học mới
+                </span>
+                <h2 className="mt-3 text-[25px] font-extrabold text-white">Tạo khóa học</h2>
+                <p className="mt-1 text-[14px] text-[#8f9bb3]">Nhập thông tin cơ bản; bạn có thể thêm bài học sau khi tạo xong.</p>
+              </div>
+              <button
+                className="rounded-xl border border-[#354055] p-2 text-[#b8c1d6] transition hover:bg-[#1a2435]"
+                type="button"
+                aria-label="Đóng form tạo khóa học"
+                disabled={isCreating}
+                onClick={closeCreateCourseForm}
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-5 p-5 sm:p-6">
+              <label className="flex flex-col gap-2">
+                <span className="font-mono text-[12px] uppercase tracking-wider text-[#9da8bd]">Tên khóa học</span>
+                <input
+                  className="rounded-xl border border-[#354055] bg-[#070d19] px-4 py-3 text-[#e7ecff] outline-none placeholder:text-[#7f8aa3] focus:border-[#adc7ff] focus:ring-2 focus:ring-[#adc7ff]/20"
+                  autoFocus
+                  maxLength={200}
+                  placeholder="Ví dụ: Hóa học 12"
+                  value={form.title}
+                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                />
+              </label>
+
+              <label className="flex flex-col gap-2">
+                <span className="font-mono text-[12px] uppercase tracking-wider text-[#9da8bd]">Mô tả khóa học</span>
+                <textarea
+                  className="min-h-32 resize-y rounded-xl border border-[#354055] bg-[#070d19] px-4 py-3 leading-6 text-[#e7ecff] outline-none placeholder:text-[#7f8aa3] focus:border-[#adc7ff] focus:ring-2 focus:ring-[#adc7ff]/20"
+                  maxLength={1000}
+                  placeholder="Mô tả mục tiêu và nội dung chính của khóa học..."
+                  value={form.description}
+                  onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+                />
+                <span className="text-right font-mono text-[11px] text-[#657188]">{form.description.length}/1000</span>
+              </label>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-2">
+                  <span className="font-mono text-[12px] uppercase tracking-wider text-[#9da8bd]">Hình thức đăng ký</span>
+                  <select
+                    className="rounded-xl border border-[#354055] bg-[#070d19] px-4 py-3 text-[#e7ecff] outline-none focus:border-[#adc7ff] focus:ring-2 focus:ring-[#adc7ff]/20"
+                    value={form.enrollment_type}
+                    onChange={(event) => setForm((current) => ({ ...current, enrollment_type: event.target.value as EnrollmentType }))}
+                  >
+                    <option value="open">Đăng ký mở</option>
+                    <option value="approval_required">Cần giảng viên duyệt</option>
+                  </select>
+                </label>
+
+                <label className="flex cursor-pointer flex-col gap-2">
+                  <span className="font-mono text-[12px] uppercase tracking-wider text-[#9da8bd]">Thumbnail</span>
+                  <span className="flex min-h-[50px] items-center gap-2 rounded-xl border border-dashed border-[#46536b] bg-[#070d19] px-4 py-3 text-[13px] text-[#adc7ff] transition hover:border-[#adc7ff]">
+                    <span className="material-symbols-outlined text-[20px]">upload</span>
+                    <span className="min-w-0 truncate">{thumbnailFile ? thumbnailFile.name : 'Chọn ảnh JPG, PNG hoặc WebP'}</span>
+                  </span>
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => setThumbnailFile(event.target.files?.[0] ?? null)} />
+                </label>
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 border-t border-[#253047] pt-5 sm:flex-row sm:justify-end">
+                <button
+                  className="rounded-xl border border-[#46536b] px-5 py-3 font-mono text-[12px] font-black uppercase tracking-wide text-[#c5cee3] transition hover:bg-[#1a2435] disabled:opacity-50"
+                  type="button"
+                  disabled={isCreating}
+                  onClick={closeCreateCourseForm}
+                >
+                  Hủy
+                </button>
+                <button
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#adc7ff] px-5 py-3 font-mono text-[12px] font-black uppercase tracking-wide text-[#00285b] transition hover:brightness-110 disabled:opacity-60"
+                  type="submit"
+                  disabled={isCreating}
+                >
+                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                  {isCreating ? 'Đang tạo...' : 'Tạo khóa học'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
       <main className="w-full flex-grow pb-24 md:pl-64">
         <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 md:px-8">
           <section className="relative overflow-hidden rounded-xl border border-white/5 bg-[#242a37] shadow-card">
@@ -301,25 +407,6 @@ export function CourseCatalogPage() {
             </div>
           </section>
 
-          {canManageContent(user) && (
-            <form className="grid gap-4 rounded-xl border border-white/5 bg-[#161c28] p-5 md:grid-cols-[1fr_1fr_180px_auto_auto]" onSubmit={handleCreateCourse}>
-              <input className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 text-[#dde2f4] outline-none placeholder:text-[#8b90a0] focus:border-[#adc7ff]" placeholder="Tên khóa học" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />
-              <input className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 text-[#dde2f4] outline-none placeholder:text-[#8b90a0] focus:border-[#adc7ff]" placeholder="Mô tả ngắn" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />
-              <select className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 text-[#dde2f4] outline-none focus:border-[#adc7ff]" value={form.enrollment_type} onChange={(event) => setForm((current) => ({ ...current, enrollment_type: event.target.value as EnrollmentType }))}>
-                <option value="open">Đăng ký mở</option>
-                <option value="approval_required">Cần duyệt</option>
-              </select>
-              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 font-mono text-[13px] text-[#adc7ff] transition hover:bg-[#242a37]">
-                <span className="material-symbols-outlined text-[18px]">image</span>
-                <span className="max-w-[120px] truncate">{thumbnailFile ? thumbnailFile.name : 'Ảnh thumbnail'}</span>
-                <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => setThumbnailFile(event.target.files?.[0] ?? null)} />
-              </label>
-              <button className="rounded-lg bg-[#adc7ff] px-5 py-3 font-mono text-[13px] font-bold text-[#002e68] transition hover:brightness-110 disabled:opacity-60" type="submit" disabled={isCreating}>
-                {isCreating ? 'Đang tạo...' : 'Tạo khóa học'}
-              </button>
-            </form>
-          )}
-
           <AppToast message={message} tone={message.startsWith('Đang ') ? 'loading' : 'warning'} onClose={() => setMessage('')} />
 
           {isLoading && (
@@ -330,12 +417,26 @@ export function CourseCatalogPage() {
 
           <section className="relative">
             <div className="relative min-w-0">
-              <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="mb-1 font-mono text-[12px] uppercase text-[#8b90a0]">{getRoleLabel(user?.role)}</p>
-                  <h2 className="text-[28px] font-semibold text-[#dde2f4]">Khóa học hiện có</h2>
+              <div className="mb-6 space-y-4">
+                <div className="flex flex-col gap-4 rounded-2xl border border-[#253047] bg-[#111827]/80 p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="mb-1 font-mono text-[12px] uppercase text-[#8b90a0]">{getRoleLabel(user?.role)}</p>
+                    <h2 className="text-[28px] font-semibold text-[#dde2f4]">Khóa học hiện có</h2>
+                    {user?.role === 'tutor' && <p className="mt-1 text-[13px] text-[#8f9bb3]">Quản lý khóa hiện tại hoặc bắt đầu xây dựng một khóa học mới.</p>}
+                  </div>
+                  {user?.role === 'tutor' && (
+                    <button
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#24dfba] px-6 py-3 font-mono text-[13px] font-black uppercase tracking-wide text-[#00382c] shadow-lg shadow-[#24dfba]/20 transition hover:-translate-y-0.5 hover:brightness-110 hover:shadow-[#24dfba]/30 active:scale-95"
+                      type="button"
+                      onClick={() => setIsCreateCourseOpen(true)}
+                    >
+                      <span className="material-symbols-outlined text-[21px]">add_circle</span>
+                      Tạo khóa học
+                    </button>
+                  )}
                 </div>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
                   <button
                     className={`inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 font-mono text-[12px] font-bold transition active:scale-95 ${
                       isFilterOpen

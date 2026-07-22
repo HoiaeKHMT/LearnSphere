@@ -18,7 +18,7 @@ router.post("/summarize-lesson/:lesson_id", protect, aiRateLimit, handleSummariz
 router.post(
 	"/generate-quiz",
 	protect,
-	authorize("tutor", "admin"),
+	authorize("tutor"),
 	aiRateLimit,
 	handleGenerateQuiz,
 );

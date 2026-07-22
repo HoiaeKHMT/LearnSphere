@@ -18,6 +18,7 @@ const clientErrors = new Map([
 	["LESSON_DOCUMENT_REQUIRED", [409, "A document is required to summarize this lesson"]],
 	["LESSON_CONTENT_EMPTY", [409, "Lesson has no text or indexed file content for AI processing"]],
 	["AI_DOCUMENT_NOT_INDEXED", [422, "The attached document could not be read for AI processing"]],
+	["AI_SUMMARY_NOT_READY", [409, "The teacher has not generated a summary for this document yet"]],
 	["AI_INDEX_IN_PROGRESS", [409, "Lesson files are already being processed for AI"]],
 	["AI_FILES_NOT_INDEXED", [409, "The teacher must process this lesson's files before students can use them with AI"]],
 	["ACTIVE_ENROLLMENT_REQUIRED", [403, "Active enrollment in this course required"]],
@@ -26,6 +27,7 @@ const clientErrors = new Map([
 	["AI_CONTEXT_TOO_LARGE", [413, "Lesson context is too large; split it into smaller lessons"]],
 	["AI_INVALID_STRUCTURED_RESPONSE", [502, "AI returned an invalid quiz structure; please try again"]],
 	["AI_EMPTY_RESPONSE", [502, "AI returned an empty response"]],
+	["AI_TIMEOUT", [504, "AI request timed out; please try again"]],
 	["AI_THROTTLED", [429, "AI provider quota exceeded; please try again later"]],
 	["AI_ACCESS_DENIED", [503, "AI provider access is not authorized for this backend"]],
 	["AI_CREDENTIALS_ERROR", [503, "AI provider credentials are missing or invalid"]],
@@ -35,7 +37,17 @@ const clientErrors = new Map([
 
 const sendAIError = (res, error, operation) => {
 	const mapped = clientErrors.get(error.message);
-	if (mapped) return res.status(mapped[0]).json({ message: mapped[1], code: error.message });
+	if (mapped) {
+		if (error.message.startsWith("AI_")) {
+			console.error(`${operation} provider error:`, {
+				code: error.message,
+				provider_status: error.cause?.status,
+				provider_error: error.cause?.message,
+				provider_cause: error.cause?.cause?.code || error.cause?.cause?.name,
+			});
+		}
+		return res.status(mapped[0]).json({ message: mapped[1], code: error.message });
+	}
 
 	console.error(`${operation} error:`, error);
 	return res.status(500).json({ message: "Internal server error" });
@@ -62,6 +74,7 @@ export const handleSummarizeLesson = async (req, res) => {
 			lessonId: req.params?.lesson_id,
 			userId: req.user._id,
 			userRole: req.user.role,
+			forceRegenerate: req.body?.force_regenerate === true,
 		});
 		return res.status(200).json(result);
 	} catch (error) {

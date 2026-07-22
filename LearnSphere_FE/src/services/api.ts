@@ -65,12 +65,17 @@ export type CourseProgress = {
   total_lessons: number;
 };
 
+export type QuizDifficulty = 'basic' | 'medium' | 'advanced';
+
 export type Quiz = {
   _id: string;
   course_id: string;
   title: string;
   description?: string;
   time_limit: number;
+  difficulty: QuizDifficulty;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type QuizAnswer = {
@@ -131,6 +136,8 @@ export type AISummaryResponse = {
   model_id: string;
   stop_reason?: string;
   usage: AIUsage | null;
+  cached: boolean;
+  generated_at?: string | null;
   ai_index_status?: Lesson['ai_index_status'];
   ai_indexed_at?: string | null;
   ai_index_error?: string;
@@ -305,8 +312,10 @@ export function getAIErrorMessage(error: unknown, fallback: string) {
 
   if (error.status === 401) return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
   if (error.status === 403) return 'Bạn không có quyền sử dụng AI trong khóa học hoặc bài học này.';
+  if (error.code === 'AI_TIMEOUT') return 'AI xử lý tài liệu quá lâu và đã hết thời gian chờ. Vui lòng thử lại; nếu tiếp tục xảy ra, hãy giảm độ dài tài liệu.';
   if (error.code === 'AI_THROTTLED') return 'Dịch vụ AI đã hết quota hoặc đang giới hạn lưu lượng. Vui lòng thử lại sau.';
   if (error.code === 'AI_DOCUMENT_NOT_INDEXED') return 'Backend không OCR được document của bài học. Hãy xem trạng thái học liệu và kiểm tra PDF có bị lỗi hoặc đặt mật khẩu hay không.';
+  if (error.code === 'AI_SUMMARY_NOT_READY') return 'Giảng viên chưa tạo bản tóm tắt cho tài liệu này.';
   if (error.code === 'AI_INDEX_IN_PROGRESS') return 'AI đang xử lý file bài học. Vui lòng đợi hoàn tất rồi thử lại.';
   if (error.code === 'AI_FILES_NOT_INDEXED') return 'Giảng viên cần tóm tắt học liệu bằng AI ít nhất một lần trước khi học viên sử dụng.';
 	if (error.code === 'LESSON_DOCUMENT_REQUIRED') return 'Bài học cần có document để tạo bản tóm tắt.';
@@ -545,9 +554,10 @@ export const api = {
     });
   },
 
-  summarizeLesson(lessonId: string) {
+  summarizeLesson(lessonId: string, forceRegenerate = false) {
     return request<AISummaryResponse>(`/ai/summarize-lesson/${lessonId}`, {
       method: 'POST',
+      body: { force_regenerate: forceRegenerate },
     });
   },
 
@@ -599,14 +609,14 @@ export const api = {
     });
   },
 
-  createQuiz(courseId: string, body: { title: string; description?: string; time_limit: number }) {
+  createQuiz(courseId: string, body: { title: string; description?: string; time_limit: number; difficulty: QuizDifficulty }) {
     return request<{ message: string; quiz: Quiz }>(`/courses/${courseId}/quizzes`, {
       method: 'POST',
       body,
     });
   },
 
-  updateQuiz(quizId: string, body: { title?: string; description?: string; time_limit?: number }) {
+  updateQuiz(quizId: string, body: { title?: string; description?: string; time_limit?: number; difficulty?: QuizDifficulty }) {
     return request<{ message: string; quiz: Quiz }>(`/quizzes/${quizId}`, {
       method: 'PUT',
       body,
@@ -675,33 +685,39 @@ export const api = {
     return request<PresignedDownload>(`/files/presigned-download?lesson_id=${lessonId}&target_type=${targetType}`);
   },
 
-  async uploadFileToS3(uploadUrl: string, file: File) {
-    let response: Response;
+  uploadFileToS3(uploadUrl: string, file: File, onProgress?: (percent: number) => void) {
+    return new Promise<boolean>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', uploadUrl);
+      xhr.setRequestHeader('Content-Type', file.type);
 
-    try {
-      response = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': file.type,
-        },
-        body: file,
-      });
-    } catch {
-      throw new Error('Không thể kết nối tới S3. Hãy kiểm tra CORS của bucket và kết nối mạng.');
-    }
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+        onProgress?.(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      };
 
-    if (!response.ok) {
-      const responseBody = await response.text().catch(() => '');
-      const s3Code = responseBody.match(/<Code>([^<]+)<\/Code>/)?.[1];
-      const s3Message = responseBody.match(/<Message>([^<]+)<\/Message>/)?.[1];
-      const detail = [s3Code, s3Message].filter(Boolean).join(': ');
+      xhr.onerror = () => {
+        reject(new Error('Không thể kết nối tới S3. Hãy kiểm tra CORS của bucket và kết nối mạng.'));
+      };
 
-      throw new Error(
-        `Upload file lên S3 thất bại (${response.status}${detail ? ` - ${detail}` : ''}). ` +
-        'Hãy xin URL mới và kiểm tra AWS credentials, IAM PutObject và bucket CORS.',
-      );
-    }
-    return true;
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onProgress?.(100);
+          resolve(true);
+          return;
+        }
+
+        const s3Code = xhr.responseText.match(/<Code>([^<]+)<\/Code>/)?.[1];
+        const s3Message = xhr.responseText.match(/<Message>([^<]+)<\/Message>/)?.[1];
+        const detail = [s3Code, s3Message].filter(Boolean).join(': ');
+        reject(new Error(
+          `Upload file lên S3 thất bại (${xhr.status}${detail ? ` - ${detail}` : ''}). ` +
+          'Hãy xin URL mới và kiểm tra AWS credentials, IAM PutObject và bucket CORS.',
+        ));
+      };
+
+      xhr.send(file);
+    });
   },
 
   forgotPassword(email: string) {

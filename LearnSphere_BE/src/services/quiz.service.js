@@ -27,26 +27,29 @@ const formatStartAttempt = (attempt, quiz) => ({
 });
 
 
-export const createQuiz = async (courseId, { title, description, time_limit }, userId, userRole) => {
+export const createQuiz = async (courseId, { title, description, time_limit, difficulty }, userId, userRole) => {
 	if (!mongoose.isValidObjectId(courseId)) throw new Error("INVALID_COURSE_ID");
 
 	const course = await Course.findOne({ _id: courseId, is_deleted: false });
 	if (!course) throw new Error("COURSE_NOT_FOUND");
 
 	const isOwner = course.created_by.toString() === userId.toString();
-	if (userRole !== "admin" && !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
+	if (userRole !== "tutor" || !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
 
 	if (typeof title !== "string" || !title.trim()) throw new Error("INVALID_QUIZ_TITLE");
 	if (description !== undefined && typeof description !== "string") throw new Error("INVALID_DESCRIPTION");
 	if (typeof time_limit !== "number" || !Number.isInteger(time_limit) || time_limit < 1) {
 		throw new Error("INVALID_TIME_LIMIT");
 	}
+	const normalizedDifficulty = difficulty ?? "basic";
+	if (!["basic", "medium", "advanced"].includes(normalizedDifficulty)) throw new Error("INVALID_DIFFICULTY");
 
 	const newQuiz = await Quiz.create({
 		course_id: courseId,
 		title: title.trim(),
 		description: description ? description.trim() : "",
 		time_limit,
+		difficulty: normalizedDifficulty,
 		questions: [],
 	});
 	return newQuiz;
@@ -71,7 +74,7 @@ export const getCourseQuizzes = async (courseId, userId, userRole) => {
 };
 
 
-export const updateQuiz = async (quizId, { title, description, time_limit }, userId, userRole) => {
+export const updateQuiz = async (quizId, { title, description, time_limit, difficulty }, userId, userRole) => {
 	if (!mongoose.isValidObjectId(quizId)) throw new Error("INVALID_QUIZ_ID");
 
 	const quiz = await Quiz.findById(quizId);
@@ -81,11 +84,11 @@ export const updateQuiz = async (quizId, { title, description, time_limit }, use
 	if (!course) throw new Error("COURSE_NOT_FOUND");
 
 	const isOwner = course.created_by.toString() === userId.toString();
-	if (userRole !== "admin" && !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
+	if (userRole !== "tutor" || !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
 
 	await checkActiveAttemptsExist(quiz._id);
 
-	if (title === undefined && description === undefined && time_limit === undefined) {
+	if (title === undefined && description === undefined && time_limit === undefined && difficulty === undefined) {
 		throw new Error("NO_FIELDS_TO_UPDATE");
 	}
 
@@ -94,10 +97,12 @@ export const updateQuiz = async (quizId, { title, description, time_limit }, use
 	if (time_limit !== undefined && (typeof time_limit !== "number" || !Number.isInteger(time_limit) || time_limit < 1)) {
 		throw new Error("INVALID_TIME_LIMIT");
 	}
+	if (difficulty !== undefined && !["basic", "medium", "advanced"].includes(difficulty)) throw new Error("INVALID_DIFFICULTY");
 
 	if (title) quiz.title = title.trim();
 	if (description !== undefined) quiz.description = description.trim();
 	if (time_limit) quiz.time_limit = time_limit;
+	if (difficulty !== undefined) quiz.difficulty = difficulty;
 	return await quiz.save();
 };
 
@@ -112,7 +117,7 @@ export const deleteQuiz = async (quizId, userId, userRole) => {
 	if (!course) throw new Error("COURSE_NOT_FOUND");
 
 	const isOwner = course.created_by.toString() === userId.toString();
-	if (userRole !== "admin" && !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
+	if (userRole !== "tutor" || !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
 
 	await checkActiveAttemptsExist(quiz._id);
 	await QuizAttempt.deleteMany({ quiz_id: quiz._id });
@@ -131,7 +136,7 @@ export const addQuestion = async (quizId, questionData, userId, userRole) => {
 	if (!course) throw new Error("COURSE_NOT_FOUND");
 
 	const isOwner = course.created_by.toString() === userId.toString();
-	if (userRole !== "admin" && !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
+	if (userRole !== "tutor" || !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
 
 	await checkActiveAttemptsExist(quiz._id);
 	const { content, question_type, point, answers } = questionData ?? {};
@@ -192,7 +197,7 @@ export const updateQuestion = async (quizId, questionId, questionData, userId, u
 	if (!course) throw new Error("COURSE_NOT_FOUND");
 
 	const isOwner = course.created_by.toString() === userId.toString();
-	if (userRole !== "admin" && !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
+	if (userRole !== "tutor" || !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
 
 	await checkActiveAttemptsExist(quiz._id);
 	const question = quiz.questions.id(questionId);
@@ -251,7 +256,7 @@ export const deleteQuestion = async (quizId, questionId, userId, userRole) => {
 	if (!course) throw new Error("COURSE_NOT_FOUND");
 
 	const isOwner = course.created_by.toString() === userId.toString();
-	if (userRole !== "admin" && !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
+	if (userRole !== "tutor" || !isOwner) throw new Error("FORBIDDEN_QUIZ_ACTION");
 
 	await checkActiveAttemptsExist(quiz._id);
 	const question = quiz.questions.id(questionId);

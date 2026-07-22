@@ -7,6 +7,13 @@ const createAIError = (code, cause) => {
 	return error;
 };
 
+const getProviderTimeoutMs = () => {
+	const configured = Number(process.env.AI_PROVIDER_TIMEOUT_MS);
+	return Number.isInteger(configured) && configured >= 15000 && configured <= 300000
+		? configured
+		: 120000;
+};
+
 const mapBedrockError = (error) => {
 	const statusCode = error?.$metadata?.httpStatusCode;
 	const errorName = error?.name;
@@ -87,6 +94,7 @@ const mapGroqError = (status, body, cause) => {
 	if (status === 429) return createAIError("AI_THROTTLED", providerError);
 	if (status === 401) return createAIError("AI_CREDENTIALS_ERROR", providerError);
 	if (status === 403) return createAIError("AI_ACCESS_DENIED", providerError);
+	if (status === 413) return createAIError("AI_CONTEXT_TOO_LARGE", providerError);
 	if (status === 400 || status === 404 || status === 422) return createAIError("AI_CONFIGURATION_ERROR", providerError);
 	return createAIError("AI_SERVICE_UNAVAILABLE", providerError);
 };
@@ -113,9 +121,12 @@ const invokeGroq = async ({ systemPrompt, messages, maxTokens, temperature }) =>
 				temperature,
 				top_p: 0.9,
 			}),
-			signal: AbortSignal.timeout(60000),
+			signal: AbortSignal.timeout(getProviderTimeoutMs()),
 		});
 	} catch (error) {
+		if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+			throw createAIError("AI_TIMEOUT", error);
+		}
 		throw createAIError("AI_SERVICE_UNAVAILABLE", error);
 	}
 

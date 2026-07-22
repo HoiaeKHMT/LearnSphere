@@ -2,9 +2,9 @@ import { createQuiz, getCourseQuizzes, updateQuiz, deleteQuiz, addQuestion, getQ
 
 export const handleCreateQuiz = async (req, res) => {
 	const { course_id } = req.params ?? {};
-    const { title, description, time_limit } = req.body ?? {};
+	const { title, description, time_limit, difficulty } = req.body ?? {};
 	try {
-		const quiz = await createQuiz(course_id, { title, description, time_limit }, req.user._id, req.user.role);
+		const quiz = await createQuiz(course_id, { title, description, time_limit, difficulty }, req.user._id, req.user.role);
 		return res.status(201).json({ message: "Quiz created successfully", quiz });
 	} catch (error) {
 		if (error.message === "INVALID_COURSE_ID") return res.status(400).json({ message: "Invalid course ID format" });
@@ -13,6 +13,7 @@ export const handleCreateQuiz = async (req, res) => {
 		if (error.message === "INVALID_QUIZ_TITLE") return res.status(400).json({ message: "Valid quiz title is required and must be a string" });
 		if (error.message === "INVALID_DESCRIPTION") return res.status(400).json({ message: "Description must be a string" });
 		if (error.message === "INVALID_TIME_LIMIT") return res.status(400).json({ message: "Time limit must be an integer number greater than 0" });
+		if (error.message === "INVALID_DIFFICULTY") return res.status(400).json({ message: "Difficulty must be basic, medium, or advanced" });
 
 		console.error("Create quiz error:", error);
 		return res.status(500).json({ message: "Internal server error" });
@@ -36,9 +37,9 @@ export const handleGetCourseQuizzes = async (req, res) => {
 
 export const handleUpdateQuiz = async (req, res) => {
 	const { quiz_id } = req.params ?? {};
-    const { title, description, time_limit } = req.body ?? {};
+	const { title, description, time_limit, difficulty } = req.body ?? {};
 	try {
-		const updated = await updateQuiz(quiz_id, { title, description, time_limit }, req.user._id, req.user.role);
+		const updated = await updateQuiz(quiz_id, { title, description, time_limit, difficulty }, req.user._id, req.user.role);
 		return res.status(200).json({ message: "Quiz updated successfully", quiz: updated });
 	} catch (error) {
 		if (error.message === "INVALID_QUIZ_ID") return res.status(400).json({ message: "Invalid quiz ID format" });
@@ -49,6 +50,7 @@ export const handleUpdateQuiz = async (req, res) => {
 		if (error.message === "INVALID_QUIZ_TITLE") return res.status(400).json({ message: "Invalid quiz title format" });
 		if (error.message === "INVALID_DESCRIPTION") return res.status(400).json({ message: "Description must be a string" });
 		if (error.message === "INVALID_TIME_LIMIT") return res.status(400).json({ message: "Time limit must be an integer number greater than 0" });
+		if (error.message === "INVALID_DIFFICULTY") return res.status(400).json({ message: "Difficulty must be basic, medium, or advanced" });
 
 		return res.status(500).json({ message: "Internal server error" });
 	}

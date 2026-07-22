@@ -3,10 +3,11 @@ import { AppHeader } from '../components/AppHeader';
 import { AppToast } from '../components/AppToast';
 import { RoleSidebar } from '../components/RoleSidebar';
 import { SphereAIButton } from '../components/SphereAIButton';
-import { canManageContent, canModerateCourse, getRoleLabel, getRoleNav, isCourseOwner } from '../lib/roleAccess';
+import { canManageContent, canModerateCourse, getCourseOwnerId, getRoleLabel, getRoleNav, isCourseOwner } from '../lib/roleAccess';
 import {
   api,
   getStoredUser,
+  type AdminUser,
   type Course,
   type Enrollment,
   type EnrollmentType,
@@ -79,6 +80,8 @@ export function LessonManagementPage() {
   const user = getStoredUser();
   const navItems = useMemo(() => getRoleNav(user), [user]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [tutors, setTutors] = useState<AdminUser[]>([]);
+  const [selectedTutorId, setSelectedTutorId] = useState('');
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
@@ -96,6 +99,10 @@ export function LessonManagementPage() {
   const [deleteReason, setDeleteReason] = useState('');
   const [isDeletingCourse, setIsDeletingCourse] = useState(false);
 
+  const visibleCourses = useMemo(
+    () => user?.role === 'admin' ? courses.filter((course) => getCourseOwnerId(course) === selectedTutorId) : courses,
+    [courses, selectedTutorId, user?.role],
+  );
   const selectedCourse = useMemo(() => courses.find((course) => course._id === selectedCourseId), [courses, selectedCourseId]);
   const canEditSelectedCourse = selectedCourse ? isCourseOwner(user, selectedCourse) : false;
   const canModerateSelectedCourse = selectedCourse ? canModerateCourse(user, selectedCourse) : false;
@@ -119,7 +126,9 @@ export function LessonManagementPage() {
         folder,
       });
 
-      await api.uploadFileToS3(presigned.upload_url, file);
+      await api.uploadFileToS3(presigned.upload_url, file, (percent) => {
+        setMessage(`Đang tải file "${file.name}" lên S3... ${percent}%`);
+      });
       setMessage(`Upload file "${file.name}" thành công!`);
       return presigned.file_key;
     } catch (err) {
@@ -136,13 +145,27 @@ export function LessonManagementPage() {
     setMessage('');
 
     try {
-      const items = await api.getCourses();
+      const [items, tutorItems] = await Promise.all([
+        api.getCourses(),
+        user?.role === 'admin' ? api.getUsers({ role: 'tutor' }) : Promise.resolve([] as AdminUser[]),
+      ]);
       const manageableCourses = user?.role === 'admin' ? items : items.filter((course) => isCourseOwner(user, course));
-      const nextSelected = manageableCourses.some((course) => course._id === preferredCourseId)
+      const preferredCourse = manageableCourses.find((course) => course._id === preferredCourseId);
+      const nextTutorId = user?.role === 'admin'
+        ? (preferredCourse
+          ? getCourseOwnerId(preferredCourse)
+          : tutorItems.some((tutor) => tutor._id === selectedTutorId) ? selectedTutorId : '')
+        : '';
+      const nextVisibleCourses = user?.role === 'admin'
+        ? manageableCourses.filter((course) => getCourseOwnerId(course) === nextTutorId)
+        : manageableCourses;
+      const nextSelected = nextVisibleCourses.some((course) => course._id === preferredCourseId)
         ? preferredCourseId
-        : manageableCourses[0]?._id ?? '';
+        : nextVisibleCourses[0]?._id ?? '';
 
       setCourses(manageableCourses);
+      setTutors(tutorItems);
+      setSelectedTutorId(nextTutorId);
       setSelectedCourseId(nextSelected);
       setCourseForm(toCourseForm(manageableCourses.find((course) => course._id === nextSelected)));
     } catch (err) {
@@ -464,15 +487,44 @@ export function LessonManagementPage() {
                 </span>
                 <h1 className="mt-4 text-[28px] font-black leading-9 text-white">Quản lý khóa học</h1>
                 <p className="mt-2 text-[14px] leading-6 text-[#b8c1d6]">
-                  Chỉnh sửa thông tin, thêm bài học, kiểm duyệt đăng ký và điều hướng sang phần quiz.
+                  {user?.role === 'admin'
+                    ? 'Chọn giảng viên và khóa học để xem nội dung, bài học và thực hiện kiểm duyệt.'
+                    : 'Chỉnh sửa thông tin, thêm bài học, kiểm duyệt đăng ký và điều hướng sang phần quiz.'}
                 </p>
               </div>
 
               <div className="flex flex-col gap-3 rounded-2xl border border-[#253047] bg-[#070d19] p-3">
+                {user?.role === 'admin' && (
+                  <label className="min-w-0 flex-1">
+                    <span className={labelClass}>Giảng viên</span>
+                    <select
+                      className={`${fieldClass} mt-2`}
+                      value={selectedTutorId}
+                      onChange={(event) => {
+                        const tutorId = event.target.value;
+                        const firstCourse = courses.find((course) => getCourseOwnerId(course) === tutorId);
+                        setSelectedTutorId(tutorId);
+                        setSelectedCourseId(firstCourse?._id ?? '');
+                      }}
+                    >
+                      <option value="">Chọn giảng viên</option>
+                      {tutors.map((tutor) => (
+                        <option key={tutor._id} value={tutor._id}>{tutor.full_name}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
                 <label className="min-w-0 flex-1">
                   <span className={labelClass}>Khóa học đang quản lý</span>
-                  <select className={`${fieldClass} mt-2`} value={selectedCourseId} onChange={(event) => setSelectedCourseId(event.target.value)}>
-                    {courses.map((course) => (
+                  <select
+                    className={`${fieldClass} mt-2`}
+                    value={selectedCourseId}
+                    disabled={user?.role === 'admin' && !selectedTutorId}
+                    onChange={(event) => setSelectedCourseId(event.target.value)}
+                  >
+                    <option value="">Chọn khóa học</option>
+                    {visibleCourses.map((course) => (
                       <option key={course._id} value={course._id}>{course.title}</option>
                     ))}
                   </select>
@@ -481,7 +533,7 @@ export function LessonManagementPage() {
                 <div className="flex w-full items-stretch rounded-xl bg-[#111827] px-3 py-2">
                   <div className={`${user?.role === 'admin' ? 'basis-1/2' : 'basis-1/3'} min-w-0 text-center`}>
                     <span className="block font-mono text-[10px] uppercase text-[#8f9bb3]">Khóa</span>
-                    <span className="text-[18px] font-black leading-6 text-[#adc7ff]">{courses.length}</span>
+                    <span className="text-[18px] font-black leading-6 text-[#adc7ff]">{visibleCourses.length}</span>
                   </div>
                   <div className={`${user?.role === 'admin' ? 'basis-1/2 border-l' : 'basis-1/3 border-x'} min-w-0 border-[#354055] text-center`}>
                     <span className="block font-mono text-[10px] uppercase text-[#8f9bb3]">Bài</span>
@@ -628,6 +680,24 @@ export function LessonManagementPage() {
                 <span className="material-symbols-outlined mb-3 text-[52px] text-[#657188]">school</span>
                 <h2 className="text-[24px] font-bold text-white">Chưa có khóa học nào có thể quản lý</h2>
                 <p className="mt-2 text-[#b8c1d6]">Hãy tạo khóa học ở trang Khóa học trước, sau đó quay lại để thêm bài học và quiz.</p>
+              </section>
+            )}
+
+            {!isLoading && user?.role === 'admin' && courses.length > 0 && !selectedTutorId && (
+              <section className="rounded-2xl border border-dashed border-[#354055] bg-[#111827]/70 p-10 text-center shadow-xl shadow-black/15">
+                <span className="material-symbols-outlined mb-3 text-[52px] text-[#657188]">person_search</span>
+                <h2 className="text-[24px] font-bold text-white">Chọn giảng viên để xem khóa học</h2>
+                <p className="mx-auto mt-2 max-w-md text-[14px] leading-6 text-[#8f9bb3]">
+                  Danh sách khóa học, bài học và thông tin kiểm duyệt sẽ xuất hiện sau khi bạn chọn giảng viên ở bên trái.
+                </p>
+              </section>
+            )}
+
+            {!isLoading && user?.role === 'admin' && selectedTutorId && !visibleCourses.length && (
+              <section className="rounded-2xl border border-dashed border-[#354055] bg-[#111827]/92 p-10 text-center shadow-xl shadow-black/20">
+                <span className="material-symbols-outlined mb-3 text-[52px] text-[#657188]">menu_book</span>
+                <h2 className="text-[24px] font-bold text-white">Giảng viên này chưa có khóa học</h2>
+                <p className="mt-2 text-[#b8c1d6]">Hãy chọn giảng viên khác để xem nội dung khóa học và bài học.</p>
               </section>
             )}
 

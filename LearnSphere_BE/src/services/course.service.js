@@ -60,7 +60,7 @@ export const updateCourse = async (courseId, { title, description, thumbnail_key
 	if (!course) throw new Error("COURSE_NOT_FOUND");
     
 	const isOwner = course.created_by.toString() === userId.toString();
-	if (userRole !== "admin" && !isOwner) throw new Error("FORBIDDEN_COURSE_ACTION");
+	if (userRole !== "tutor" || !isOwner) throw new Error("FORBIDDEN_COURSE_ACTION");
     
 	if (title === undefined && description === undefined && thumbnail_key === undefined && enrollment_type === undefined) {
 		throw new Error("NO_FIELDS_TO_UPDATE");

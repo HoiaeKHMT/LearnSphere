@@ -37,11 +37,15 @@ export function canStudy(user?: User | null) {
   return user?.role === 'student';
 }
 
+export function getCourseOwnerId(course: Course) {
+  return (typeof course.created_by === 'object' ? course.created_by._id : course.created_by) ?? '';
+}
+
 export function isCourseOwner(user: User | null | undefined, course: Course) {
   if (user?.role !== 'tutor') return false;
 
   const userId = getUserId(user);
-  const creatorId = typeof course.created_by === 'object' ? course.created_by._id : course.created_by;
+  const creatorId = getCourseOwnerId(course);
 
   return Boolean(userId && creatorId && userId === creatorId);
 }

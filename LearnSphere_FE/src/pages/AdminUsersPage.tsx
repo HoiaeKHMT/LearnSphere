@@ -101,7 +101,7 @@ export function AdminUsersPage() {
       <RoleSidebar activePath="/admin-users" items={navItems} user={user} />
       <AppToast message={message} tone="warning" onClose={() => setMessage('')} />
 
-      <main className="mx-auto w-full max-w-[1180px] space-y-5 px-4 py-6 md:pl-64 md:pr-6">
+      <main className="mx-auto w-full max-w-[1440px] space-y-5 px-4 py-6 md:pl-64 md:pr-6">
         <section className="rounded-2xl border border-[#253047] bg-[#111827]/92 p-5 shadow-xl shadow-black/20">
           <div className="grid gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(560px,1.2fr)] xl:items-center">
             <div>
@@ -157,44 +157,44 @@ export function AdminUsersPage() {
             <div className="p-10 text-center text-[#c1c6d7]">Không có tài khoản phù hợp bộ lọc hiện tại.</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1040px] table-fixed text-left">
+              <table className="w-full min-w-[880px] table-fixed text-left">
                 <colgroup>
-                  <col className="w-[22%]" />
-                  <col className="w-[25%]" />
+                  <col className="w-[21%]" />
+                  <col className="w-[24%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[16%]" />
                   <col className="w-[14%]" />
-                  <col className="w-[15%]" />
-                  <col className="w-[15%]" />
-                  <col className="w-[9%]" />
+                  <col className="w-[13%]" />
                 </colgroup>
                 <thead className="bg-[#1a202c] font-mono text-[11px] uppercase tracking-wider text-[#8b90a0]">
                   <tr>
                     {['Họ tên', 'Email', 'Role', 'Trạng thái', 'Ngày tạo', 'Thao tác'].map((head) => (
-                      <th key={head} className="px-5 py-3">{head}</th>
+                      <th key={head} className={`px-3 py-3 xl:px-4 ${head === 'Thao tác' ? 'sticky right-0 z-10 border-l border-[#354055] bg-[#1a202c] text-right' : ''}`}>{head}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#414754]/40">
                   {users.map((item) => (
-                    <tr key={item._id} className="hover:bg-[#2f3542]/20">
-                      <td className="px-5 py-4 font-semibold">{item.full_name}</td>
-                      <td className="truncate px-5 py-4 text-[#c1c6d7]">{item.email}</td>
-                      <td className="px-5 py-4 text-[#c1c6d7]">{getRoleLabel(item.role)}</td>
-                      <td className="px-5 py-4">
+                    <tr key={item._id} className="group hover:bg-[#2f3542]/20">
+                      <td className="break-words px-3 py-4 font-semibold xl:px-4">{item.full_name}</td>
+                      <td className="truncate px-3 py-4 text-[#c1c6d7] xl:px-4" title={item.email}>{item.email}</td>
+                      <td className="px-3 py-4 text-[#c1c6d7] xl:px-4">{getRoleLabel(item.role)}</td>
+                      <td className="px-3 py-4 xl:px-4">
                         <span className={`inline-flex whitespace-nowrap rounded-full border px-3 py-1 font-mono text-[11px] ${statusClass(item.account_status)}`}>
                           {statusLabel(item.account_status)}
                         </span>
                       </td>
-                      <td className="px-5 py-4 font-mono text-[11px] leading-5 text-[#8b90a0]">{formatDate(item.createdAt)}</td>
-                      <td className="px-5 py-4">
+                      <td className="px-3 py-4 font-mono text-[11px] leading-5 text-[#8b90a0] xl:px-4">{formatDate(item.createdAt)}</td>
+                      <td className="sticky right-0 border-l border-[#253047] bg-[#111827] px-3 py-4 transition-colors group-hover:bg-[#151d2b] xl:px-4">
                         {item.role === 'student' || item.role === 'tutor' ? (
-                          <div className="flex justify-end gap-2">
+                          <div className="flex flex-col items-stretch gap-2">
                             {item.account_status !== 'active' && (
-                              <button className="whitespace-nowrap rounded-lg bg-[#24dfba] px-3 py-2 font-mono text-[11px] font-bold text-[#00382c]" type="button" onClick={() => void updateUserStatus(item._id, 'active')}>
+                              <button className="whitespace-nowrap rounded-lg bg-[#24dfba] px-2 py-2 text-center font-mono text-[11px] font-bold text-[#00382c]" type="button" onClick={() => void updateUserStatus(item._id, 'active')}>
                                 Mở khóa
                               </button>
                             )}
                             {item.account_status !== 'blocked' && (
-                              <button className="whitespace-nowrap rounded-lg border border-[#ffb4ab]/40 px-3 py-2 font-mono text-[11px] font-bold text-[#ffb4ab]" type="button" onClick={() => void updateUserStatus(item._id, 'blocked')}>
+                              <button className="whitespace-nowrap rounded-lg border border-[#ffb4ab]/40 px-2 py-2 text-center font-mono text-[11px] font-bold text-[#ffb4ab]" type="button" onClick={() => void updateUserStatus(item._id, 'blocked')}>
                                 Khóa
                               </button>
                             )}

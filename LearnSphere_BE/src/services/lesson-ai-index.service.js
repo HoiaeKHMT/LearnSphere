@@ -112,7 +112,7 @@ export const indexLessonFilesForAI = async (lessonId, userId, userRole) => {
 	const course = await Course.findOne({ _id: lesson.course_id, is_deleted: false });
 	if (!course) throw new Error("COURSE_NOT_FOUND");
 	const isOwner = course.created_by.toString() === userId.toString();
-	if (userRole !== "admin" && !isOwner) throw new Error("FORBIDDEN_LESSON_ACTION");
+	if (userRole !== "tutor" || !isOwner) throw new Error("FORBIDDEN_LESSON_ACTION");
 	if (!lesson.document_key) throw new Error("LESSON_DOCUMENT_REQUIRED");
 	if (lesson.ai_index_status === "processing") throw new Error("AI_INDEX_IN_PROGRESS");
 
