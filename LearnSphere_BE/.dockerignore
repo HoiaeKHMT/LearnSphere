@@ -1,0 +1,27 @@
+# Dependencies (sẽ được cài lại trong Docker build)
+node_modules/
+
+# Environment files (KHÔNG bao giờ đưa vào image)
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+API_DESIGN.md
+
+# Development tools
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db

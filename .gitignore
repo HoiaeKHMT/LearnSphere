@@ -1,6 +1,11 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
+
+# AWS SSH Key — KHÔNG bao giờ commit
+*.pem
+*.ppk
 
 node_modules/
 dist/
