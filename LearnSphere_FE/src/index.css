@@ -131,3 +131,25 @@ pre,
 .ai-assistant-pulse {
   animation: aiPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+.sphere-ai-root {
+  inset: 0 !important;
+  isolation: isolate;
+  pointer-events: none;
+  position: fixed !important;
+  z-index: 2147483647 !important;
+}
+
+.sphere-ai-popup,
+.sphere-ai-launcher {
+  pointer-events: auto;
+  position: fixed !important;
+}
+
+.sphere-ai-popup {
+  z-index: 2147483647 !important;
+}
+
+.sphere-ai-launcher {
+  z-index: 2147483646 !important;
+}
