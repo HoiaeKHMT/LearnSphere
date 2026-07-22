@@ -227,6 +227,45 @@ Request khóa tài khoản:
 
 API này chỉ cập nhật tài khoản có role `student` hoặc `tutor`. Không thể dùng để thay đổi trạng thái của tài khoản `admin`.
 
+### 1.8. Cập nhật hồ sơ cá nhân
+
+Mọi tài khoản đang active có thể cập nhật tên hiển thị và avatar của chính mình.
+
+```http
+PATCH /api/users/me
+Authorization: Bearer <access_token>
+```
+
+Request có thể chứa một hoặc cả hai trường:
+
+```json
+{
+	"full_name": "Nguyễn Văn A",
+	"avatar_key": "users/6870f8c90db5248718eb6e31/avatars/uuid-avatar.webp"
+}
+```
+
+- `full_name` sau khi trim phải có từ 2 đến 100 ký tự.
+- `avatar_key` phải thuộc đúng namespace của user đang đăng nhập và trỏ đến object ảnh hợp lệ trên S3.
+- Gửi `avatar_key: null` hoặc chuỗi rỗng để gỡ avatar hiện tại.
+- Frontend upload avatar qua presigned URL trước rồi mới gửi `file_key` vào endpoint này.
+
+Response:
+
+```json
+{
+	"message": "Profile updated successfully",
+	"user": {
+		"id": "6870f8c90db5248718eb6e31",
+		"full_name": "Nguyễn Văn A",
+		"email": "student@example.com",
+		"role": "student",
+		"account_status": "active",
+		"avatar_key": "users/6870f8c90db5248718eb6e31/avatars/uuid-avatar.webp"
+	}
+}
+```
+
 ---
 
 ## 2. Course API
@@ -1563,6 +1602,41 @@ Xin presigned upload URL bằng course_id → PUT video/PDF lên S3
 → POST/PUT lesson với video_key hoặc document_key
 ```
 
+### 6.5. Upload và đọc avatar cá nhân
+
+Xin presigned upload URL, dành cho mọi tài khoản đang active:
+
+```http
+POST /api/files/profile-avatar/presigned-upload
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+```json
+{
+	"file_name": "avatar.webp",
+	"content_type": "image/webp",
+	"file_size": 245760
+}
+```
+
+Ảnh hỗ trợ JPEG, PNG, WebP và tối đa 5 MB. Key được tạo theo định dạng:
+
+```text
+users/{user_id}/avatars/{uuid}-{safe-file-name}
+```
+
+Sau khi PUT file trực tiếp lên S3, frontend gọi `PATCH /api/users/me` với `avatar_key` nhận được.
+
+Lấy presigned download URL của avatar hiện tại:
+
+```http
+GET /api/files/profile-avatar
+Authorization: Bearer <access_token>
+```
+
+Hai endpoint avatar chỉ thao tác trên avatar của chính user đang đăng nhập. Presigned URL không được lưu trong MongoDB hoặc localStorage.
+
 ### Error response thường gặp
 
 ```json
@@ -1612,6 +1686,7 @@ Xin presigned upload URL bằng course_id → PUT video/PDF lên S3
 |---|---|
 | `GET /api/users` | `admin` |
 | `PATCH /api/users/{user_id}/status` | `admin` |
+| `PATCH /api/users/me` | Mọi tài khoản đăng nhập đang active |
 
 Tài khoản tutor mới đăng ký có `account_status = pending`. Admin phải chuyển trạng thái sang `active` trước khi tutor có thể đăng nhập. Khi student hoặc tutor bị chuyển sang `blocked`, các request sử dụng access token cũ cũng bị từ chối bởi middleware xác thực.
 
@@ -1651,3 +1726,93 @@ Tài khoản tutor mới đăng ký có `account_status = pending`. Admin phải
 | `POST /api/files/presigned-upload` | Tutor sở hữu course hoặc `admin` |
 | `GET /api/files/course-thumbnail/{course_id}` | Public |
 | `GET /api/files/presigned-download` | Student enrollment active, tutor sở hữu course hoặc `admin` |
+| `POST /api/files/profile-avatar/presigned-upload` | Mọi tài khoản đăng nhập đang active, chỉ cho chính mình |
+| `GET /api/files/profile-avatar` | Mọi tài khoản đăng nhập đang active, chỉ đọc avatar của chính mình |
+
+---
+
+## 8. System Monitoring API
+
+Chỉ tài khoản `admin` được xem số liệu giám sát hệ thống.
+
+```http
+GET /api/stats
+Authorization: Bearer <admin_access_token>
+```
+
+API tổng hợp:
+
+- Tổng request API, request trong ngày, tỷ lệ lỗi và thời gian phản hồi trung bình.
+- Biểu đồ request và số user đăng nhập duy nhất trong 7 ngày gần nhất.
+- Số tài khoản theo trạng thái và vai trò.
+- Course, lesson, quiz, enrollment và quiz attempt.
+- Số object và dung lượng đã dùng trong private S3 bucket.
+
+Response rút gọn:
+
+```json
+{
+	"generated_at": "2026-07-21T12:00:00.000Z",
+	"traffic": {
+		"total_requests": 1250,
+		"today_requests": 85,
+		"unique_users_7d": 24,
+		"failed_requests": 18,
+		"error_rate_percent": 1.44,
+		"average_response_ms": 92,
+		"daily_requests": [
+			{
+				"date": "2026-07-21",
+				"requests": 85,
+				"failed_requests": 2,
+				"unique_users": 11
+			}
+		]
+	},
+	"users": {
+		"total": 42,
+		"active": 38,
+		"pending": 3,
+		"blocked": 1,
+		"by_role": {
+			"student": 35,
+			"tutor": 6,
+			"admin": 1
+		}
+	},
+	"content": {
+		"active_courses": 8,
+		"deleted_courses": 1,
+		"total_lessons": 36,
+		"total_quizzes": 12,
+		"enrollments": {
+			"active": 73,
+			"pending": 4
+		},
+		"quiz_attempts": {
+			"in_progress": 2,
+			"submitted": 94,
+			"expired": 7
+		}
+	},
+	"storage": {
+		"status": "available",
+		"used_bytes": 524288000,
+		"object_count": 48,
+		"capacity_bytes": 5368709120,
+		"usage_percent": 9.77,
+		"message": null
+	}
+}
+```
+
+`RequestMetric` bắt đầu ghi nhận từ khi middleware monitoring được triển khai; hệ thống không thể khôi phục lượt request lịch sử trước thời điểm đó.
+
+Số liệu S3 được cache trong 5 phút. IAM principal của backend cần quyền `s3:ListBucket`. Biến `S3_STORAGE_LIMIT_BYTES` là tùy chọn và chỉ dùng làm hạn mức tham chiếu để tính `usage_percent`; nếu không cấu hình thì API vẫn trả dung lượng đã dùng nhưng phần trăm là `null`.
+
+| Status | Trường hợp |
+|---|---|
+| `200 OK` | Trả dữ liệu giám sát; lỗi quyền S3 được biểu diễn bằng `storage.status = unavailable` thay vì làm hỏng toàn bộ response |
+| `401 Unauthorized` | Thiếu hoặc sai access token |
+| `403 Forbidden` | Tài khoản không phải admin |
+| `500 Internal Server Error` | Không thể tổng hợp dữ liệu MongoDB |

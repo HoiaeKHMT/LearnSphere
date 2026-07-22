@@ -22,7 +22,9 @@ export function LoginPage() {
     try {
       const auth = await api.login(email, password);
       saveSession(auth);
-      window.location.assign('/dashboard');
+      const returnTo = new URLSearchParams(window.location.search).get('return_to');
+      const safeReturnTo = returnTo?.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/dashboard';
+      window.location.assign(safeReturnTo);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể đăng nhập');
     } finally {

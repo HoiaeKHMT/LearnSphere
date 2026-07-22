@@ -28,6 +28,11 @@ const userSchema = new mongoose.Schema(
 			enum: ["pending", "active", "blocked"],
 			default: "active",
 		},
+		avatar_key: {
+			type: String,
+			default: "",
+			trim: true,
+		},
 		token_version: {
 			type: Number,
 			default: 0,

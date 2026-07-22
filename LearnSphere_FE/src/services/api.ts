@@ -8,6 +8,7 @@ export type User = {
   email: string;
   role: Role;
   account_status?: 'pending' | 'active' | 'blocked';
+  avatar_key?: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -134,10 +135,58 @@ export type AdminUser = User & {
   updatedAt?: string;
 };
 
+export type SystemStats = {
+  generated_at: string;
+  traffic: {
+    total_requests: number;
+    today_requests: number;
+    unique_users_7d: number;
+    failed_requests: number;
+    error_rate_percent: number;
+    average_response_ms: number;
+    daily_requests: Array<{
+      date: string;
+      requests: number;
+      failed_requests: number;
+      unique_users: number;
+    }>;
+  };
+  users: {
+    total: number;
+    active: number;
+    pending: number;
+    blocked: number;
+    by_role: Record<Role, number>;
+  };
+  content: {
+    active_courses: number;
+    deleted_courses: number;
+    total_lessons: number;
+    total_quizzes: number;
+    enrollments: { active: number; pending: number };
+    quiz_attempts: { in_progress: number; submitted: number; expired: number };
+  };
+  storage: {
+    status: 'available' | 'unavailable';
+    used_bytes: number | null;
+    object_count: number | null;
+    capacity_bytes: number | null;
+    usage_percent: number | null;
+    message: string | null;
+  };
+};
+
 type AuthResponse = {
   access_token: string;
   token_type: string;
   user: User;
+};
+
+type RegisterResponse = {
+  access_token: string | null;
+  token_type: string | null;
+  user: User;
+  message: string;
 };
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
@@ -198,6 +247,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const contentType = response.headers.get('content-type') ?? '';
   const data = contentType.includes('application/json') ? await response.json() : null;
 
+  if (response.status === 401 && options.auth !== false) {
+    clearSession();
+    window.dispatchEvent(new Event('learnsphere:unauthorized'));
+  }
+
   if (!response.ok) {
     throw new Error(data?.message ?? data?.detail ?? `Request failed with status ${response.status}`);
   }
@@ -215,7 +269,7 @@ export const api = {
   },
 
   register(full_name: string, email: string, password: string, role: Role = 'student') {
-    return request<AuthResponse>('/auth/register', {
+    return request<RegisterResponse>('/auth/register', {
       method: 'POST',
       auth: false,
       body: { full_name, email, password, role },
@@ -419,15 +473,30 @@ export const api = {
   },
 
   async uploadFileToS3(uploadUrl: string, file: File) {
-    const response = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': file.type,
-      },
-      body: file,
-    });
+    let response: Response;
+
+    try {
+      response = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type,
+        },
+        body: file,
+      });
+    } catch {
+      throw new Error('Không thể kết nối tới S3. Hãy kiểm tra CORS của bucket và kết nối mạng.');
+    }
+
     if (!response.ok) {
-      throw new Error(`Upload file lên S3 thất bại với status ${response.status}`);
+      const responseBody = await response.text().catch(() => '');
+      const s3Code = responseBody.match(/<Code>([^<]+)<\/Code>/)?.[1];
+      const s3Message = responseBody.match(/<Message>([^<]+)<\/Message>/)?.[1];
+      const detail = [s3Code, s3Message].filter(Boolean).join(': ');
+
+      throw new Error(
+        `Upload file lên S3 thất bại (${response.status}${detail ? ` - ${detail}` : ''}). ` +
+        'Hãy xin URL mới và kiểm tra AWS credentials, IAM PutObject và bucket CORS.',
+      );
     }
     return true;
   },
@@ -454,6 +523,32 @@ export const api = {
     if (filters.account_status) params.set('account_status', filters.account_status);
     const query = params.toString();
     return request<AdminUser[]>(`/users${query ? `?${query}` : ''}`);
+  },
+
+  updateProfile(body: { full_name?: string; avatar_key?: string | null }) {
+    return request<{ message: string; user: User }>('/users/me', {
+      method: 'PATCH',
+      body,
+    });
+  },
+
+  createProfileAvatarUpload(file: File) {
+    return request<PresignedUpload>('/files/profile-avatar/presigned-upload', {
+      method: 'POST',
+      body: {
+        file_name: file.name,
+        content_type: file.type,
+        file_size: file.size,
+      },
+    });
+  },
+
+  getProfileAvatar() {
+    return request<PresignedDownload>('/files/profile-avatar');
+  },
+
+  getSystemStats() {
+    return request<SystemStats>('/stats');
   },
 
   updateAccountStatus(userId: string, account_status: 'active' | 'blocked') {

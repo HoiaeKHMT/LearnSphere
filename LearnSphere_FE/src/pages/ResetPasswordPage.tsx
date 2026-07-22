@@ -3,7 +3,8 @@ import { api } from '../services/api';
 
 export function ResetPasswordPage() {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get('token') ?? '';
+  const pathToken = window.location.pathname.match(/^\/reset-password\/([^/]+)\/?$/)?.[1];
+  const token = pathToken ?? params.get('token') ?? '';
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);

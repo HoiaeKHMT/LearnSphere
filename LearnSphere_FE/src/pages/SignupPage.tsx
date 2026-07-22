@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react';
-import { api, saveSession, type Role } from '../services/api';
+import { api, clearSession, saveSession, type Role, type User } from '../services/api';
 
 export function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState<Role>('student');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [pendingTutor, setPendingTutor] = useState<User | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -19,13 +20,56 @@ export function SignupPage() {
 
     try {
       const auth = await api.register(fullName, email, password, role);
-      saveSession(auth);
+
+      if (!auth.access_token) {
+        clearSession();
+
+        if (auth.user.role === 'tutor' && auth.user.account_status === 'pending') {
+          setPendingTutor(auth.user);
+          return;
+        }
+
+        throw new Error('Đăng ký thành công nhưng hệ thống không cấp phiên đăng nhập. Vui lòng đăng nhập lại.');
+      }
+
+      saveSession({
+        access_token: auth.access_token,
+        token_type: auth.token_type ?? 'bearer',
+        user: auth.user,
+      });
       window.location.assign('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể tạo tài khoản');
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  if (pendingTutor) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#0d131f] px-4 text-[#dde2f4]">
+        <main className="w-full max-w-lg rounded-2xl border border-[#414754] bg-[#161c28] p-8 text-center shadow-2xl md:p-10">
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-[#ffc080]/10 text-[#ffc080]">
+            <span className="material-symbols-outlined text-[36px]">hourglass_top</span>
+          </div>
+          <p className="mb-2 font-mono text-[12px] uppercase tracking-wider text-[#ffc080]">Đăng ký thành công</p>
+          <h1 className="text-[30px] font-bold">Tài khoản đang chờ duyệt</h1>
+          <p className="mt-4 leading-7 text-[#c1c6d7]">
+            Tài khoản giảng viên của <strong className="text-[#dde2f4]">{pendingTutor.full_name}</strong> đã được tạo.
+            Admin cần kích hoạt tài khoản trước khi bạn có thể đăng nhập.
+          </p>
+          <p className="mt-3 font-mono text-[13px] text-[#8b90a0]">{pendingTutor.email}</p>
+          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+            <a className="rounded-lg bg-[#adc7ff] px-6 py-3 font-bold text-[#00285b]" href="/login">
+              Đến trang đăng nhập
+            </a>
+            <a className="rounded-lg border border-[#414754] px-6 py-3 font-bold text-[#dde2f4]" href="/">
+              Về trang chủ
+            </a>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (

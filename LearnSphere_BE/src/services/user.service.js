@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import User from "../models/User.model.js";
+import { validateOwnProfileAvatarKey } from "./file.service.js";
 
 const allowedRoles = ["student", "tutor", "admin"];
 const allowedAccountStatuses = ["pending", "active", "blocked"];
@@ -38,6 +39,40 @@ export const updateAccountStatus = async (userId, accountStatus) => {
 		email: user.email,
 		role: user.role,
 		account_status: user.account_status,
+		created_at: user.createdAt,
+		updated_at: user.updatedAt,
+	};
+};
+
+export const updateOwnProfile = async (userId, { full_name, avatar_key } = {}) => {
+	if (full_name === undefined && avatar_key === undefined) throw new Error("EMPTY_PROFILE_UPDATE");
+
+	const user = await User.findById(userId);
+	if (!user) throw new Error("USER_NOT_FOUND");
+
+	if (full_name !== undefined) {
+		if (typeof full_name !== "string") throw new Error("INVALID_FULL_NAME");
+		const normalizedName = full_name.trim();
+		if (normalizedName.length < 2 || normalizedName.length > 100) throw new Error("INVALID_FULL_NAME");
+		user.full_name = normalizedName;
+	}
+
+	if (avatar_key !== undefined) {
+		if (avatar_key === null || avatar_key === "") {
+			user.avatar_key = "";
+		} else {
+			user.avatar_key = await validateOwnProfileAvatarKey(user._id, avatar_key);
+		}
+	}
+
+	await user.save();
+	return {
+		id: user._id,
+		full_name: user.full_name,
+		email: user.email,
+		role: user.role,
+		account_status: user.account_status,
+		avatar_key: user.avatar_key,
 		created_at: user.createdAt,
 		updated_at: user.updatedAt,
 	};

@@ -2,7 +2,41 @@ import {
 	createPresignedUpload,
 	createPresignedDownload,
 	createCourseThumbnailDownload,
+	createProfileAvatarDownload,
+	createProfileAvatarUpload,
 } from "../services/file.service.js";
+
+export const handleCreateProfileAvatarUpload = async (req, res) => {
+	try {
+		return res.status(200).json(await createProfileAvatarUpload(req.body, req.user._id));
+	} catch (error) {
+		if (["INVALID_FILE_REQUEST", "INVALID_FILE_NAME", "INVALID_FILE_TYPE", "INVALID_FILE_SIZE"].includes(error.message)) {
+			return res.status(400).json({ message: error.message });
+		}
+		if (error.message === "FILE_TOO_LARGE") return res.status(413).json({ message: "Profile avatar exceeds 5 MB" });
+
+		console.error("Create profile avatar upload URL error:", error);
+		return res.status(500).json({ message: "Internal server error" });
+	}
+};
+
+export const handleGetProfileAvatar = async (req, res) => {
+	try {
+		return res.status(200).json(await createProfileAvatarDownload(req.user._id));
+	} catch (error) {
+		if (["FILE_NOT_FOUND_IN_RESOURCE", "FILE_NOT_FOUND_IN_S3", "USER_NOT_FOUND"].includes(error.message)) {
+			return res.status(404).json({ message: "Profile avatar not found" });
+		}
+		if (["INVALID_AVATAR_KEY", "INVALID_FILE_TYPE", "INVALID_FILE_SIZE"].includes(error.message)) {
+			return res.status(400).json({ message: "Invalid profile avatar" });
+		}
+		if (error.message === "FILE_TOO_LARGE") return res.status(413).json({ message: "Stored profile avatar exceeds 5 MB" });
+		if (error.message === "S3_HEAD_FAILED") return res.status(502).json({ message: "Unable to verify profile avatar with S3" });
+
+		console.error("Create profile avatar download URL error:", error);
+		return res.status(500).json({ message: "Internal server error" });
+	}
+};
 
 export const handleCreatePresignedUpload = async (req, res) => {
 	try {

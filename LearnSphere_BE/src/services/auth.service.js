@@ -41,7 +41,8 @@ export const signup = async (full_name, email, password, role) => {
 			full_name: newUser.full_name,
 			email: newUser.email,
 			role: newUser.role,
-			account_status: newUser.account_status
+			account_status: newUser.account_status,
+			avatar_key: newUser.avatar_key,
 		},
 	};
 };
@@ -72,6 +73,7 @@ export const login = async (email, password) => {
 			full_name: user.full_name,
 			email: user.email,
 			role: user.role,
+			avatar_key: user.avatar_key,
 		},
 	};
 };

@@ -77,6 +77,7 @@ export const handleGetMe = async (req, res) => {
 		email: req.user.email,
 		role: req.user.role,
         account_status: req.user.account_status,
+		avatar_key: req.user.avatar_key,
 		created_at: req.user.createdAt,
 		updated_at: req.user.updatedAt,
 	});
