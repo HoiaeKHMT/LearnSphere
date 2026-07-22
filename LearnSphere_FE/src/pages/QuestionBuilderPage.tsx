@@ -19,6 +19,8 @@ type QuizForm = {
   time_limit: string;
 };
 
+type BuilderMode = 'ai' | 'manual';
+
 const avatarSrc =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuDKeNBi2jNgbEX4dt6nsH8jJ0KsxzOaxqx2_3cWyMw1EojZOMGx8vJ8ZLFtsLYzqvQb9_dSiLClGrvSO4CC2JllO5YZHuHqUbvV1MSBNYm-i0rDvPn2F8A7NYDrALUHOW7B91ZePrzuoy9OH-pfMu7ItzDyGaJdG859kW0r_EFrTL9AHdLIPJAgzWL8CGrqQxQvMwNXzlmKUYlEHjOyGdInGpJkYNSHYPbXj6hVa42TveS95tPWoVIQhA';
 
@@ -75,6 +77,8 @@ export function QuestionBuilderPage() {
   const [questionForm, setQuestionForm] = useState<QuestionForm>(emptyQuestionForm);
   const [selectedAILessonId, setSelectedAILessonId] = useState('');
   const [aiQuestionCount, setAIQuestionCount] = useState('5');
+  const [builderMode, setBuilderMode] = useState<BuilderMode>('ai');
+  const [isCreateQuizOpen, setIsCreateQuizOpen] = useState(false);
   const [isLoadingCourses, setIsLoadingCourses] = useState(true);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
@@ -250,6 +254,7 @@ export function QuestionBuilderPage() {
       });
       setMessage(result.message);
       setQuizForm(emptyQuizForm);
+	  setIsCreateQuizOpen(false);
       const nextQuizzes = await api.getCourseQuizzes(selectedCourseId);
       setQuizzes(nextQuizzes);
       setSelectedQuizId(result.quiz._id);
@@ -325,6 +330,10 @@ export function QuestionBuilderPage() {
   }
 
   async function handleGenerateWithAI() {
+	if (!selectedQuizId) {
+	  setMessage('Vui lòng chọn hoặc tạo quiz trước khi sinh câu hỏi bằng AI.');
+	  return;
+	}
     if (!selectedAILessonId) {
       setMessage('Vui lòng chọn bài học có nội dung để AI tạo câu hỏi.');
       return;
@@ -364,11 +373,31 @@ export function QuestionBuilderPage() {
       return;
     }
 
+	const invalidIndex = generatedQuestions.findIndex((question) => {
+	  const answers = question.answers.filter((answer) => answer.content.trim());
+	  const correctCount = answers.filter((answer) => answer.is_correct).length;
+	  return !question.content.trim()
+		|| !Number.isFinite(question.point)
+		|| question.point <= 0
+		|| answers.length < 2
+		|| (question.question_type === 'single_choice' ? correctCount !== 1 : correctCount < 1);
+	});
+	if (invalidIndex >= 0) {
+	  setMessage(`Câu AI số ${invalidIndex + 1} chưa hợp lệ. Hãy kiểm tra nội dung, đáp án và đáp án đúng.`);
+	  return;
+	}
+
     setIsSavingGenerated(true);
     let savedCount = 0;
     try {
-      for (const question of generatedQuestions) {
-        await api.createQuizQuestion(selectedQuizId, question);
+	  for (const question of generatedQuestions) {
+		await api.createQuizQuestion(selectedQuizId, {
+		  ...question,
+		  content: question.content.trim(),
+		  answers: question.answers
+			.filter((answer) => answer.content.trim())
+			.map((answer) => ({ ...answer, content: answer.content.trim() })),
+		});
         savedCount += 1;
       }
       setGeneratedQuestions([]);
@@ -381,6 +410,42 @@ export function QuestionBuilderPage() {
     } finally {
       setIsSavingGenerated(false);
     }
+  }
+
+  function updateGeneratedQuestion(index: number, changes: Partial<QuestionInput>) {
+    setGeneratedQuestions((current) => current.map((question, itemIndex) => {
+      if (itemIndex !== index) return question;
+      if (changes.question_type === 'single_choice' && question.question_type !== 'single_choice') {
+        return {
+          ...question,
+          ...changes,
+          answers: question.answers.map((answer, answerIndex) => ({ ...answer, is_correct: answerIndex === 0 })),
+        };
+      }
+      return { ...question, ...changes };
+    }));
+  }
+
+  function updateGeneratedAnswer(questionIndex: number, answerIndex: number, content: string) {
+    setGeneratedQuestions((current) => current.map((question, itemIndex) => itemIndex === questionIndex
+      ? {
+          ...question,
+          answers: question.answers.map((answer, index) => index === answerIndex ? { ...answer, content } : answer),
+        }
+      : question));
+  }
+
+  function updateGeneratedCorrectAnswer(questionIndex: number, answerIndex: number, checked: boolean) {
+    setGeneratedQuestions((current) => current.map((question, itemIndex) => {
+      if (itemIndex !== questionIndex) return question;
+      return {
+        ...question,
+        answers: question.answers.map((answer, index) => ({
+          ...answer,
+          is_correct: question.question_type === 'single_choice' ? index === answerIndex : index === answerIndex ? checked : answer.is_correct,
+        })),
+      };
+    }));
   }
 
   if (!canEditQuizDetail) {
@@ -403,10 +468,94 @@ export function QuestionBuilderPage() {
       <AppHeader user={user} roleLabel={getRoleLabel(user?.role)} avatarSrc={avatarSrc} />
       <AppToast message={message} tone="warning" onClose={() => setMessage('')} />
 
+      {isCreateQuizOpen && (
+        <div className="fixed inset-0 z-50 flex overflow-y-auto bg-black/75 p-4 backdrop-blur-sm">
+          <form
+            className="relative m-auto w-full max-w-[560px] rounded-2xl border border-[#ffcc7a]/30 bg-[#111827] p-5 shadow-2xl shadow-black/50 sm:p-6"
+            onSubmit={handleCreateQuiz}
+          >
+            <button
+              className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full border border-[#354055] text-[#9da8bd] transition hover:border-[#ffb4ab]/50 hover:bg-[#ffb4ab]/10 hover:text-[#ffb4ab] disabled:cursor-not-allowed disabled:opacity-50"
+              type="button"
+              aria-label="Đóng form tạo quiz"
+              disabled={isCreatingQuiz}
+              onClick={() => setIsCreateQuizOpen(false)}
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+
+            <div className="mb-6 flex items-center gap-3 pr-12">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#ffcc7a]/12 text-[#ffcc7a]">
+                <span className="material-symbols-outlined">add_notes</span>
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-[22px] font-extrabold text-white">Tạo quiz mới</h2>
+                <p className="truncate text-[13px] text-[#8f9bb3]">
+                  {selectedCourse?.title ?? 'Chọn khóa học trước khi tạo quiz'}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <label className="flex flex-col gap-2">
+                <span className={labelClass}>Tiêu đề quiz</span>
+                <input
+                  className={fieldClass}
+                  autoFocus
+                  placeholder="Ví dụ: Kiểm tra chương 1"
+                  value={quizForm.title}
+                  onChange={(event) => setQuizForm((current) => ({ ...current, title: event.target.value }))}
+                />
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className={labelClass}>Mô tả</span>
+                <input
+                  className={fieldClass}
+                  placeholder="Mô tả ngắn cho quiz"
+                  value={quizForm.description}
+                  onChange={(event) => setQuizForm((current) => ({ ...current, description: event.target.value }))}
+                />
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className={labelClass}>Thời lượng (phút)</span>
+                <input
+                  className={fieldClass}
+                  type="number"
+                  min="1"
+                  placeholder="15"
+                  value={quizForm.time_limit}
+                  onChange={(event) => setQuizForm((current) => ({ ...current, time_limit: event.target.value }))}
+                />
+              </label>
+
+              <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+                <button
+                  className="rounded-xl border border-[#46536b] px-5 py-3 font-mono text-[12px] font-black uppercase tracking-wide text-[#c5cee3] transition hover:bg-[#1a2435] disabled:cursor-not-allowed disabled:opacity-50"
+                  type="button"
+                  disabled={isCreatingQuiz}
+                  onClick={() => setIsCreateQuizOpen(false)}
+                >
+                  Hủy
+                </button>
+                <button
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#adc7ff] px-5 py-3 font-mono text-[13px] font-black uppercase tracking-wide text-[#00285b] shadow-lg shadow-[#adc7ff]/20 transition hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                  type="submit"
+                  disabled={!selectedCourseId || isCreatingQuiz}
+                >
+                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                  {isCreatingQuiz ? 'Đang tạo...' : 'Tạo quiz'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
       <RoleSidebar activePath="/question-builder" items={navItems} user={user} />
 
       <main className="min-w-0 md:pl-64">
-        <div className="mx-auto flex max-w-[1180px] flex-col gap-5 p-4 md:flex-row md:items-start md:p-6">
+		<div className="mx-auto max-w-[1180px] p-4 md:p-6">
+		  <div className="flex flex-col gap-5 md:flex-row md:items-start">
           <section className="w-full shrink-0 space-y-5 md:sticky md:top-24 md:w-[340px] xl:w-[380px]">
             <div className="rounded-2xl border border-[#253047] bg-[#111827]/92 p-5 shadow-xl shadow-black/20">
               <div className="mb-5 flex items-center gap-3">
@@ -477,57 +626,15 @@ export function QuestionBuilderPage() {
               </div>
             </div>
 
-            <form className="rounded-2xl border border-[#253047] bg-[#111827]/92 p-5 shadow-xl shadow-black/20" onSubmit={handleCreateQuiz}>
-              <div className="mb-5 flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ffcc7a]/12 text-[#ffcc7a]">
-                  <span className="material-symbols-outlined">add_notes</span>
-                </span>
-                <div>
-                  <h2 className="text-[22px] font-extrabold">Tạo quiz mới</h2>
-                  <p className="text-[13px] text-[#8f9bb3]">Tạo khung quiz rồi thêm câu hỏi ở bên phải</p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <label className="flex flex-col gap-2">
-                  <span className={labelClass}>Tiêu đề quiz</span>
-                  <input
-                    className={fieldClass}
-                    placeholder="Ví dụ: Kiểm tra chương 1"
-                    value={quizForm.title}
-                    onChange={(event) => setQuizForm((current) => ({ ...current, title: event.target.value }))}
-                  />
-                </label>
-                <label className="flex flex-col gap-2">
-                  <span className={labelClass}>Mô tả</span>
-                  <input
-                    className={fieldClass}
-                    placeholder="Mô tả ngắn cho quiz"
-                    value={quizForm.description}
-                    onChange={(event) => setQuizForm((current) => ({ ...current, description: event.target.value }))}
-                  />
-                </label>
-                <label className="flex flex-col gap-2">
-                  <span className={labelClass}>Thời lượng (phút)</span>
-                  <input
-                    className={fieldClass}
-                    type="number"
-                    min="1"
-                    placeholder="15"
-                    value={quizForm.time_limit}
-                    onChange={(event) => setQuizForm((current) => ({ ...current, time_limit: event.target.value }))}
-                  />
-                </label>
-                <button
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#adc7ff] px-5 py-3 font-mono text-[13px] font-black uppercase tracking-wide text-[#00285b] shadow-lg shadow-[#adc7ff]/20 transition hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                  type="submit"
-                  disabled={!selectedCourseId || isCreatingQuiz}
-                >
-                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                  {isCreatingQuiz ? 'Đang tạo...' : 'Tạo quiz'}
-                </button>
-              </div>
-            </form>
+			<button
+			  className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#ffcc7a]/35 bg-[#ffcc7a]/10 px-4 py-3 font-mono text-[12px] font-black uppercase tracking-wide text-[#ffcc7a] transition hover:bg-[#ffcc7a]/15 disabled:cursor-not-allowed disabled:opacity-50"
+			  type="button"
+			  disabled={!selectedCourseId}
+			  onClick={() => setIsCreateQuizOpen(true)}
+			>
+			  <span className="material-symbols-outlined text-[18px]">add_circle</span>
+			  Tạo quiz mới
+			</button>
           </section>
 
           <section className="flex min-w-0 flex-1 flex-col gap-5">
@@ -541,20 +648,33 @@ export function QuestionBuilderPage() {
                   <p className="text-[13px] text-[#8f9bb3]">{selectedQuiz?.title ?? 'Chọn quiz để bắt đầu thêm câu hỏi'}</p>
                 </div>
               </div>
-              <button
-                className="flex items-center gap-2 rounded-xl bg-[#fe9800] px-5 py-3 font-bold text-[#3b2300] shadow-lg shadow-[#fe9800]/20 transition hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-                type="button"
-                disabled={!selectedAILessonId || isGeneratingAI}
-                onClick={() => void handleGenerateWithAI()}
-              >
-                <span className={`material-symbols-outlined text-[20px] ${isGeneratingAI ? 'animate-spin' : ''}`}>
-                  {isGeneratingAI ? 'progress_activity' : 'auto_awesome'}
-                </span>
-                {isGeneratingAI ? 'AI đang tạo...' : 'Tạo bằng AI'}
-              </button>
+			  <div className="flex flex-wrap gap-2 font-mono text-[11px]">
+				<span className="rounded-full border border-[#adc7ff]/25 bg-[#adc7ff]/10 px-3 py-1.5 text-[#adc7ff]">{selectedQuiz ? `${selectedQuiz.time_limit} phút` : 'Chưa chọn quiz'}</span>
+				<span className="rounded-full border border-[#24dfba]/25 bg-[#24dfba]/10 px-3 py-1.5 text-[#24dfba]">{questions.length} câu đã lưu</span>
+			  </div>
             </div>
 
-            <section className="rounded-2xl border border-[#fe9800]/25 bg-[#111827]/92 p-5 shadow-xl shadow-black/20">
+			<div className="grid grid-cols-2 rounded-2xl border border-[#253047] bg-[#111827]/92 p-1.5 shadow-xl shadow-black/20">
+			  <button
+				className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-mono text-[12px] font-black transition ${builderMode === 'ai' ? 'bg-[#fe9800] text-[#3b2300]' : 'text-[#9da8bd] hover:bg-[#1a2435] hover:text-white'}`}
+				type="button"
+				onClick={() => setBuilderMode('ai')}
+			  >
+				<span className="material-symbols-outlined text-[18px]">auto_awesome</span>
+				Tạo bằng AI
+			  </button>
+			  <button
+				className={`flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-mono text-[12px] font-black transition ${builderMode === 'manual' ? 'bg-[#adc7ff] text-[#00285b]' : 'text-[#9da8bd] hover:bg-[#1a2435] hover:text-white'}`}
+				type="button"
+				onClick={() => setBuilderMode('manual')}
+			  >
+				<span className="material-symbols-outlined text-[18px]">edit_note</span>
+				Nhập thủ công
+			  </button>
+			</div>
+
+			{builderMode === 'ai' && (
+			<section className="rounded-2xl border border-[#fe9800]/25 bg-[#111827]/92 p-5 shadow-xl shadow-black/20">
               <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_120px_auto] md:items-end">
                 <label className="flex flex-col gap-2">
                   <span className={labelClass}>Bài học làm nguồn</span>
@@ -588,7 +708,7 @@ export function QuestionBuilderPage() {
                 <button
                   className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#fe9800]/40 bg-[#fe9800]/10 px-5 py-3 font-bold text-[#ffcc7a] hover:bg-[#fe9800]/20 disabled:cursor-not-allowed disabled:opacity-50"
                   type="button"
-                  disabled={!selectedAILessonId || isGeneratingAI}
+				  disabled={!selectedQuizId || !selectedAILessonId || isGeneratingAI}
                   onClick={() => void handleGenerateWithAI()}
                 >
                   <span className="material-symbols-outlined text-[19px]">auto_awesome</span>
@@ -621,16 +741,11 @@ export function QuestionBuilderPage() {
 
                   <div className="space-y-3">
                     {generatedQuestions.map((question, index) => (
-                      <article key={`${question.content}-${index}`} className="rounded-xl border border-[#354055] bg-[#070d19] p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-mono text-[10px] uppercase tracking-wider text-[#ffcc7a]">
-                              Câu {index + 1} · {question.question_type === 'single_choice' ? 'Một đáp án' : 'Nhiều đáp án'}
-                            </p>
-                            <h4 className="mt-2 text-[15px] font-bold leading-6 text-white">{question.content}</h4>
-                          </div>
+					  <article key={`ai-draft-${index}`} className="rounded-xl border border-[#354055] bg-[#070d19] p-4">
+						<div className="mb-3 flex items-center justify-between gap-3">
+						  <p className="font-mono text-[11px] font-black uppercase tracking-wider text-[#ffcc7a]">Câu nháp {index + 1}</p>
                           <button
-                            className="text-[#ffb4ab]"
+							className="rounded-lg p-1.5 text-[#ffb4ab] transition hover:bg-[#ffb4ab]/10"
                             type="button"
                             aria-label="Bỏ câu hỏi nháp"
                             onClick={() => setGeneratedQuestions((current) => current.filter((_, itemIndex) => itemIndex !== index))}
@@ -638,14 +753,47 @@ export function QuestionBuilderPage() {
                             <span className="material-symbols-outlined text-[20px]">close</span>
                           </button>
                         </div>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+						<textarea
+						  className={`${fieldClass} min-h-20 resize-y text-[14px] leading-6`}
+						  value={question.content}
+						  onChange={(event) => updateGeneratedQuestion(index, { content: event.target.value })}
+						/>
+						<div className="mt-3 grid gap-3 sm:grid-cols-[1fr_110px]">
+						  <select
+							className={fieldClass}
+							value={question.question_type}
+							onChange={(event) => updateGeneratedQuestion(index, { question_type: event.target.value as QuestionInput['question_type'] })}
+						  >
+							<option value="single_choice">Một đáp án đúng</option>
+							<option value="multiple_choice">Nhiều đáp án đúng</option>
+						  </select>
+						  <input
+							className={fieldClass}
+							type="number"
+							min="0.5"
+							step="0.5"
+							value={question.point}
+							onChange={(event) => updateGeneratedQuestion(index, { point: Number(event.target.value) })}
+							aria-label={`Điểm câu AI số ${index + 1}`}
+						  />
+						</div>
+						<div className="mt-3 space-y-2">
                           {question.answers.map((answer, answerIndex) => (
-                            <div
-                              key={`${answer.content}-${answerIndex}`}
-                              className={`rounded-lg border px-3 py-2 text-[13px] ${answer.is_correct ? 'border-[#24dfba]/40 bg-[#24dfba]/10 text-[#24dfba]' : 'border-[#253047] text-[#aeb8cc]'}`}
-                            >
-                              {answer.content}
-                            </div>
+							<label key={answerIndex} className={`flex items-center gap-3 rounded-xl border p-2 transition ${answer.is_correct ? 'border-[#24dfba]/45 bg-[#24dfba]/10' : 'border-[#253047] bg-[#0d1422]'}`}>
+							  <input
+								type={question.question_type === 'single_choice' ? 'radio' : 'checkbox'}
+								name={`ai-correct-${index}`}
+								checked={answer.is_correct}
+								onChange={(event) => updateGeneratedCorrectAnswer(index, answerIndex, event.target.checked)}
+							  />
+							  <input
+								className="min-w-0 flex-1 bg-transparent px-2 py-1 text-[13px] text-[#e7ecff] outline-none"
+								value={answer.content}
+								onChange={(event) => updateGeneratedAnswer(index, answerIndex, event.target.value)}
+								aria-label={`Đáp án ${answerIndex + 1} của câu AI ${index + 1}`}
+							  />
+							  {answer.is_correct && <span className="font-mono text-[10px] font-bold text-[#24dfba]">ĐÚNG</span>}
+							</label>
                           ))}
                         </div>
                       </article>
@@ -654,7 +802,9 @@ export function QuestionBuilderPage() {
                 </div>
               )}
             </section>
+			)}
 
+			{builderMode === 'manual' && (
             <form className="rounded-2xl border border-[#253047] bg-[#111827]/92 p-5 shadow-xl shadow-black/20" onSubmit={handleCreateQuestion}>
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -769,6 +919,7 @@ export function QuestionBuilderPage() {
                 </button>
               </div>
             </form>
+			)}
 
             <section className="overflow-hidden rounded-2xl border border-[#253047] bg-[#111827]/92 shadow-xl shadow-black/20">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#253047] px-5 py-4">
@@ -832,7 +983,8 @@ export function QuestionBuilderPage() {
               )}
             </section>
           </section>
-        </div>
+		  </div>
+		</div>
       </main>
 
       <SphereAIButton />

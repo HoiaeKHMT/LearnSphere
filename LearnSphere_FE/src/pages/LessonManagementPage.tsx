@@ -701,25 +701,16 @@ export function LessonManagementPage() {
                             </h3>
                             <p className="mt-1 line-clamp-2 text-[14px] leading-6 text-[#b8c1d6]">{lesson.content || 'Chưa có nội dung'}</p>
                           </a>
-                          <div className="flex shrink-0 flex-wrap gap-2 px-2 pb-2 md:px-0 md:pb-0 md:pr-2">
-                            <a
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-[#adc7ff] px-4 py-2 font-mono text-[12px] font-black text-[#00285b] transition hover:brightness-110"
-                              href={`/lesson-detail?course_id=${encodeURIComponent(selectedCourseId)}&lesson_id=${encodeURIComponent(lesson._id)}`}
-                            >
-                              <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                              Mở bài
-                            </a>
-                            {canEditSelectedCourse && (
-                              <>
-								<button className="rounded-xl border border-[#adc7ff]/40 px-4 py-2 font-mono text-[12px] font-bold text-[#adc7ff] hover:bg-[#adc7ff]/10" type="button" onClick={() => { setEditingLessonId(lesson._id); setLessonForm(toLessonForm(lesson)); }}>
-								  Sửa
-								</button>
-								<button className="rounded-xl border border-[#ffb4ab]/40 px-4 py-2 font-mono text-[12px] font-bold text-[#ffb4ab] hover:bg-[#ffb4ab]/10" type="button" onClick={() => void handleDeleteLesson(lesson._id)}>
-								  Xóa
-								</button>
-                              </>
-                            )}
-                          </div>
+                          {canEditSelectedCourse && (
+                            <div className="flex shrink-0 flex-wrap gap-2 px-2 pb-2 md:px-0 md:pb-0 md:pr-2">
+							  <button className="rounded-xl border border-[#adc7ff]/40 px-4 py-2 font-mono text-[12px] font-bold text-[#adc7ff] hover:bg-[#adc7ff]/10" type="button" onClick={() => { setEditingLessonId(lesson._id); setLessonForm(toLessonForm(lesson)); }}>
+								Sửa
+							  </button>
+							  <button className="rounded-xl border border-[#ffb4ab]/40 px-4 py-2 font-mono text-[12px] font-bold text-[#ffb4ab] hover:bg-[#ffb4ab]/10" type="button" onClick={() => void handleDeleteLesson(lesson._id)}>
+								Xóa
+							  </button>
+							</div>
+						  )}
                         </article>
                       ))}
                     </div>

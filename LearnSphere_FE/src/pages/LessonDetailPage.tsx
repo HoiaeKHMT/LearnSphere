@@ -602,6 +602,33 @@ export function LessonDetailPage() {
             </section>
 
             <aside className="space-y-5 lg:sticky lg:top-24 lg:col-span-4">
+              <section className="rounded-xl border border-[#414754] bg-[#161c28] p-5 shadow-xl shadow-black/20">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="font-mono text-[12px] font-bold uppercase tracking-wider text-[#8b90a0]">Course Modules</h2>
+                  <span className="font-mono text-[12px] text-[#adc7ff]">{lessons.length}</span>
+                </div>
+                {isLoading && <p className="font-mono text-[12px] text-[#8b90a0]">Đang tải bài học...</p>}
+                {!isLoading && !lessons.length && (
+                  <p className="rounded-lg border border-dashed border-[#414754] p-4 text-[14px] text-[#c1c6d7]">Chưa có bài học nào.</p>
+                )}
+                <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                  {lessons.map((item) => (
+                    <a
+                      key={item._id}
+                      className={`flex items-center gap-3 rounded-lg border px-3 py-3 transition ${
+                        lesson?._id === item._id
+                          ? 'border-[#adc7ff]/40 bg-[#adc7ff]/10 text-[#adc7ff]'
+                          : 'border-transparent text-[#c1c6d7] hover:bg-[#2f3542] hover:text-[#e7ecff]'
+                      }`}
+                      href={`/lesson-detail?course_id=${encodeURIComponent(item.course_id)}&lesson_id=${encodeURIComponent(item._id)}`}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">{lesson?._id === item._id ? 'play_circle' : 'radio_button_unchecked'}</span>
+                      <span className="min-w-0 flex-1 truncate text-[14px]">{item.order_index}. {item.title}</span>
+                    </a>
+                  ))}
+                </div>
+              </section>
+
               <section className="rounded-xl border border-[#414754] bg-[#161f2e] p-5 shadow-xl shadow-black/20">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="font-mono text-[12px] font-bold uppercase tracking-wider text-[#adc7ff]">Lesson Progress</h2>
@@ -691,32 +718,6 @@ export function LessonDetailPage() {
                 </div>
               </section>
 
-              <section className="rounded-xl border border-[#414754] bg-[#161c28] p-5 shadow-xl shadow-black/20">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="font-mono text-[12px] font-bold uppercase tracking-wider text-[#8b90a0]">Course Modules</h2>
-                  <span className="font-mono text-[12px] text-[#adc7ff]">{lessons.length}</span>
-                </div>
-                {isLoading && <p className="font-mono text-[12px] text-[#8b90a0]">Đang tải bài học...</p>}
-                {!isLoading && !lessons.length && (
-                  <p className="rounded-lg border border-dashed border-[#414754] p-4 text-[14px] text-[#c1c6d7]">Chưa có bài học nào.</p>
-                )}
-                <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
-                  {lessons.map((item) => (
-                    <a
-                      key={item._id}
-                      className={`flex items-center gap-3 rounded-lg border px-3 py-3 transition ${
-                        lesson?._id === item._id
-                          ? 'border-[#adc7ff]/40 bg-[#adc7ff]/10 text-[#adc7ff]'
-                          : 'border-transparent text-[#c1c6d7] hover:bg-[#2f3542] hover:text-[#e7ecff]'
-                      }`}
-                      href={`/lesson-detail?course_id=${encodeURIComponent(item.course_id)}&lesson_id=${encodeURIComponent(item._id)}`}
-                    >
-                      <span className="material-symbols-outlined text-[18px]">{lesson?._id === item._id ? 'play_circle' : 'radio_button_unchecked'}</span>
-                      <span className="min-w-0 flex-1 truncate text-[14px]">{item.order_index}. {item.title}</span>
-                    </a>
-                  ))}
-                </div>
-              </section>
             </aside>
           </div>
         </div>
