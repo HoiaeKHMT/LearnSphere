@@ -176,7 +176,7 @@ export function LessonDetailPage() {
                 </section>
 
                 <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="flex flex-col justify-between gap-3 rounded-lg border border-[#414754] p-4">
+                  <div className="student-media-card flex flex-col justify-between gap-3 rounded-lg border border-[#414754] p-4">
                     <div>
                       <p className="mb-1 font-mono text-[12px] uppercase tracking-wider text-[#8b90a0]">Video Bài học (S3)</p>
                       <p className="break-all font-mono text-[13px] text-[#c1c6d7]">{lesson.video_key || 'Chưa có video'}</p>
@@ -200,7 +200,7 @@ export function LessonDetailPage() {
                     )}
                   </div>
 
-                  <div className="flex flex-col justify-between gap-3 rounded-lg border border-[#414754] p-4">
+                  <div className="student-media-card flex flex-col justify-between gap-3 rounded-lg border border-[#414754] p-4">
                     <div>
                       <p className="mb-1 font-mono text-[12px] uppercase tracking-wider text-[#8b90a0]">Tài liệu Bài học (S3)</p>
                       <p className="break-all font-mono text-[13px] text-[#c1c6d7]">{lesson.document_key || 'Chưa có tài liệu'}</p>

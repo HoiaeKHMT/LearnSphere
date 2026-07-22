@@ -4,7 +4,7 @@ import { AppToast } from '../components/AppToast';
 import { SphereAIButton } from '../components/SphereAIButton';
 import { RoleSidebar } from '../components/RoleSidebar';
 import { canManageContent, canModerateCourse, canStudy, getRoleLabel, getRoleNav, isCourseOwner } from '../lib/roleAccess';
-import { api, getStoredUser, type Course, type Enrollment, type EnrollmentType } from '../services/api';
+import { api, getStoredUser, type Course, type CourseProgress, type Enrollment, type EnrollmentType } from '../services/api';
 
 const avatarSrc =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuAK3DeXFfcU7eoLcYm0J-P0geFc_1SNB3sOpbZdSgXNGYGNkWLvpydHgoO3teNd6SCKCfYzJzNrs1AB7P8Pu74X-3istluRsHM1oPvbEs2nLPM2cHWOxHmwakxXKAZY99rZGG-p9kypULkAvH9bkTxwS1EgNluYqYhNlGpql2gZkqIWaOYk5FWOQvYjhFI2VJivahYgEOwamgFB5MZtSI9a-fovv-ztHAlZ1TjPwNnEgpB773mBUptA6A';
@@ -37,6 +37,7 @@ export function CourseCatalogPage() {
   const navItems = useMemo(() => getRoleNav(user), [user]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [enrollmentStatusByCourseId, setEnrollmentStatusByCourseId] = useState<Record<string, Enrollment['status']>>({});
+  const [progressByCourseId, setProgressByCourseId] = useState<Record<string, CourseProgress>>({});
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -66,16 +67,34 @@ export function CourseCatalogPage() {
       ]);
 
       setCourses(items);
-      setEnrollmentStatusByCourseId(
-        Object.fromEntries(
-          myEnrollments
-            .filter((enrollment) => typeof enrollment.course_id !== 'string')
-            .map((enrollment) => {
-              const enrolledCourse = enrollment.course_id as Course;
-              return [enrolledCourse._id, enrollment.status] as const;
-            }),
-        ),
+      const enrollmentStatuses = Object.fromEntries(
+        myEnrollments
+          .filter((enrollment) => typeof enrollment.course_id !== 'string')
+          .map((enrollment) => {
+            const enrolledCourse = enrollment.course_id as Course;
+            return [enrolledCourse._id, enrollment.status] as const;
+          }),
       );
+      setEnrollmentStatusByCourseId(enrollmentStatuses);
+
+      if (canStudy(user)) {
+        const activeCourseIds = Object.entries(enrollmentStatuses)
+          .filter(([, status]) => status === 'active')
+          .map(([courseId]) => courseId);
+        const progressItems = await Promise.all(
+          activeCourseIds.map(async (courseId) => {
+            try {
+              const progress = await api.getCourseProgress(courseId);
+              return [courseId, progress] as const;
+            } catch {
+              return null;
+            }
+          }),
+        );
+        setProgressByCourseId(Object.fromEntries(progressItems.filter(Boolean) as Array<readonly [string, CourseProgress]>));
+      } else {
+        setProgressByCourseId({});
+      }
 
       const thumbnails = await Promise.all(
         items
@@ -487,6 +506,8 @@ export function CourseCatalogPage() {
                   const studentAction = getStudentAction(course);
                   const canOpenDetail = isActiveEnrollment || !canStudy(user);
                   const badgeTone = index % 3 === 0 ? 'text-[#ffc080]' : index % 3 === 1 ? 'text-[#24dfba]' : 'text-[#adc7ff]';
+                  const progress = progressByCourseId[course._id];
+                  const progressPercent = progress?.progress_percent ?? 0;
 
                   return (
                     <article key={course._id} className="group flex h-full flex-col rounded-xl border border-white/5 bg-[#1a202c] p-4 transition-all hover:border-[#adc7ff]/30">
@@ -558,8 +579,11 @@ export function CourseCatalogPage() {
                               <span>Đang học</span>
                             </div>
                             <div className="h-1.5 overflow-hidden rounded-full bg-[#2f3542]">
-                              <div className="h-full w-[65%] rounded-full bg-[#ffc080]" />
+                              <div className="h-full rounded-full bg-[#ffc080] transition-all duration-500" style={{ width: `${progressPercent}%` }} />
                             </div>
+                            <p className="mt-1 font-mono text-[11px] text-[#8b90a0]">
+                              {progress ? `${progress.completed_lessons}/${progress.total_lessons} bài · ${progressPercent}% hoàn thành` : 'Đang cập nhật tiến độ...'}
+                            </p>
                           </div>
                         )}
 

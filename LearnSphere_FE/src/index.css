@@ -68,6 +68,10 @@ select {
   .icon-button {
     @apply inline-flex h-10 w-10 items-center justify-center rounded-lg text-[#c1c6d7] transition-colors hover:bg-[#242a37] hover:text-[#adc7ff] active:scale-95;
   }
+
+  .student-media-card p.break-all {
+    display: none;
+  }
 }
 
 @keyframes aiPulse {
