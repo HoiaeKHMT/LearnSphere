@@ -67,7 +67,7 @@ export function LoginPage() {
         <div className="w-full max-w-[480px] space-y-6">
           <div className="text-center space-y-2">
             <h1 className="text-[32px] font-semibold leading-10 tracking-[-0.01em] text-[#dde2f4]">Chào mừng trở lại</h1>
-            <p className="text-[16px] leading-6 text-[#c1c6d7]">Đăng nhập để tiếp tục hành trình học tập cùng AI.</p>
+            <p className="text-[16px] leading-6 text-[#c1c6d7]">Đăng nhập để tiếp tục hành trình học tập.</p>
           </div>
 
           <div className="auth-card glow-subtle rounded-xl p-8">

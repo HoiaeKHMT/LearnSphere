@@ -40,9 +40,6 @@ export function AppHeader({ avatarSrc, roleLabel, user }: AppHeaderProps) {
             <BrandLogo href="/dashboard" iconClassName="text-[30px]" textClassName="text-[24px]" />
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            <button className="icon-button" type="button" aria-label="Tìm kiếm">
-              <span className="material-symbols-outlined">search</span>
-            </button>
             <NotificationBell enabled={Boolean(user)} />
             <UserAvatarMenu name={user?.full_name ?? 'LearnSphere User'} role={roleLabel} avatarSrc={resolvedAvatarSrc} />
           </div>

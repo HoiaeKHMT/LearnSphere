@@ -8,7 +8,6 @@ import { api, getStoredUser, type Course, type CourseProgress, type Enrollment, 
 
 const avatarSrc =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuAK3DeXFfcU7eoLcYm0J-P0geFc_1SNB3sOpbZdSgXNGYGNkWLvpydHgoO3teNd6SCKCfYzJzNrs1AB7P8Pu74X-3istluRsHM1oPvbEs2nLPM2cHWOxHmwakxXKAZY99rZGG-p9kypULkAvH9bkTxwS1EgNluYqYhNlGpql2gZkqIWaOYk5FWOQvYjhFI2VJivahYgEOwamgFB5MZtSI9a-fovv-ztHAlZ1TjPwNnEgpB773mBUptA6A';
-
 const heroImage =
   'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=1600&q=80';
 
@@ -84,8 +83,7 @@ export function CourseCatalogPage() {
         const progressItems = await Promise.all(
           activeCourseIds.map(async (courseId) => {
             try {
-              const progress = await api.getCourseProgress(courseId);
-              return [courseId, progress] as const;
+              return [courseId, await api.getCourseProgress(courseId)] as const;
             } catch {
               return null;
             }
@@ -108,7 +106,6 @@ export function CourseCatalogPage() {
             }
           }),
       );
-
       setThumbnailUrls(Object.fromEntries(thumbnails.filter(Boolean) as Array<readonly [string, string]>));
     } catch (err) {
       if (!silent) setMessage(err instanceof Error ? err.message : 'Không thể tải khóa học');
@@ -277,7 +274,7 @@ export function CourseCatalogPage() {
                 {featuredCourse?.title ?? 'Khám phá khóa học trong LearnSphere'}
               </h1>
               <p className="mt-4 line-clamp-2 text-[15px] leading-7 text-[#c1c6d7] md:text-[17px]">
-                {featuredCourse?.description ?? 'Tìm khóa học phù hợp, đăng ký học và tiếp tục lộ trình của bạn trên một giao diện mới trực quan hơn.'}
+                {featuredCourse?.description ?? 'Tìm khóa học phù hợp, đăng ký học và tiếp tục lộ trình của bạn trên một giao diện trực quan hơn.'}
               </p>
               <div className="mt-7 flex flex-wrap items-center gap-4">
                 {featuredCourse ? (
@@ -306,23 +303,9 @@ export function CourseCatalogPage() {
 
           {canManageContent(user) && (
             <form className="grid gap-4 rounded-xl border border-white/5 bg-[#161c28] p-5 md:grid-cols-[1fr_1fr_180px_auto_auto]" onSubmit={handleCreateCourse}>
-              <input
-                className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 text-[#dde2f4] outline-none placeholder:text-[#8b90a0] focus:border-[#adc7ff]"
-                placeholder="Tên khóa học"
-                value={form.title}
-                onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-              />
-              <input
-                className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 text-[#dde2f4] outline-none placeholder:text-[#8b90a0] focus:border-[#adc7ff]"
-                placeholder="Mô tả ngắn"
-                value={form.description}
-                onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-              />
-              <select
-                className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 text-[#dde2f4] outline-none focus:border-[#adc7ff]"
-                value={form.enrollment_type}
-                onChange={(event) => setForm((current) => ({ ...current, enrollment_type: event.target.value as EnrollmentType }))}
-              >
+              <input className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 text-[#dde2f4] outline-none placeholder:text-[#8b90a0] focus:border-[#adc7ff]" placeholder="Tên khóa học" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />
+              <input className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 text-[#dde2f4] outline-none placeholder:text-[#8b90a0] focus:border-[#adc7ff]" placeholder="Mô tả ngắn" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />
+              <select className="rounded-lg border border-[#414754] bg-[#0d131f] px-4 py-3 text-[#dde2f4] outline-none focus:border-[#adc7ff]" value={form.enrollment_type} onChange={(event) => setForm((current) => ({ ...current, enrollment_type: event.target.value as EnrollmentType }))}>
                 <option value="open">Đăng ký mở</option>
                 <option value="approval_required">Cần duyệt</option>
               </select>
@@ -361,9 +344,7 @@ export function CourseCatalogPage() {
                     }`}
                     type="button"
                     aria-expanded={isFilterOpen}
-                    onClick={() => {
-                      setIsFilterOpen((current) => !current);
-                    }}
+                    onClick={() => setIsFilterOpen((current) => !current)}
                   >
                     <span className="material-symbols-outlined text-[18px]">filter_list</span>
                     Bộ lọc
@@ -395,94 +376,75 @@ export function CourseCatalogPage() {
 
               {isFilterOpen && (
                 <div className="mb-6 rounded-xl border border-white/10 bg-[#161c28] p-4 shadow-xl shadow-black/20">
-                <div className="mb-4 flex items-center justify-between gap-4">
-                  <h2 className="text-[18px] font-semibold text-[#dde2f4]">Bộ lọc</h2>
-                  <button className="icon-button h-8 w-8" type="button" aria-label="Đóng bộ lọc" onClick={() => setIsFilterOpen(false)}>
-                    <span className="material-symbols-outlined text-[18px]">close</span>
-                  </button>
-                </div>
-                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-                  <label className="block space-y-1.5">
-                    <span className="font-mono text-[11px] uppercase tracking-wide text-[#8b90a0]">Tìm kiếm</span>
-                    <span className="block">
-                      <input
-                        className="h-9 w-full rounded-full border border-[#414754] bg-[#080e1a] px-4 text-[13px] text-[#dde2f4] outline-none placeholder:text-[#8b90a0] focus:border-[#adc7ff]"
-                        placeholder="Tìm khóa học..."
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                      />
-                    </span>
-                  </label>
-
-                  <div>
-                    <p className="mb-2.5 font-mono text-[11px] uppercase tracking-wide text-[#8b90a0]">Kiểu đăng ký</p>
-                    <div className="space-y-2.5">
-                      {[
-                        { value: 'all', label: 'Tất cả' },
-                        { value: 'open', label: 'Đăng ký mở' },
-                        { value: 'approval_required', label: 'Cần duyệt' },
-                      ].map((item) => (
-                        <label key={item.value} className="flex cursor-pointer items-center gap-2.5 text-[14px] font-medium text-[#c1c6d7] transition hover:text-[#dde2f4]">
-                          <input
-                            className="h-3.5 w-3.5 rounded border-[#414754] bg-[#0d131f] text-[#adc7ff]"
-                            type="radio"
-                            name="enrollment_filter"
-                            checked={enrollmentFilter === item.value}
-                            onChange={() => setEnrollmentFilter(item.value as EnrollmentFilter)}
-                          />
-                          {item.label}
-                        </label>
-                      ))}
-                    </div>
+                  <div className="mb-4 flex items-center justify-between gap-4">
+                    <h2 className="text-[18px] font-semibold text-[#dde2f4]">Bộ lọc</h2>
+                    <button className="icon-button h-8 w-8" type="button" aria-label="Đóng bộ lọc" onClick={() => setIsFilterOpen(false)}>
+                      <span className="material-symbols-outlined text-[18px]">close</span>
+                    </button>
                   </div>
+                  <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                    <label className="block space-y-1.5">
+                      <span className="font-mono text-[11px] uppercase tracking-wide text-[#8b90a0]">Tìm kiếm</span>
+                      <input className="h-9 w-full rounded-full border border-[#414754] bg-[#080e1a] px-4 text-[13px] text-[#dde2f4] outline-none placeholder:text-[#8b90a0] focus:border-[#adc7ff]" placeholder="Tìm khóa học..." value={query} onChange={(event) => setQuery(event.target.value)} />
+                    </label>
 
-                  {canStudy(user) && (
                     <div>
-                      <p className="mb-2.5 font-mono text-[11px] uppercase tracking-wide text-[#8b90a0]">Trạng thái học</p>
+                      <p className="mb-2.5 font-mono text-[11px] uppercase tracking-wide text-[#8b90a0]">Kiểu đăng ký</p>
                       <div className="space-y-2.5">
                         {[
                           { value: 'all', label: 'Tất cả' },
-                          { value: 'not_enrolled', label: 'Chưa đăng ký' },
-                          { value: 'active', label: 'Đang học' },
-                          { value: 'pending', label: 'Chờ duyệt' },
+                          { value: 'open', label: 'Đăng ký mở' },
+                          { value: 'approval_required', label: 'Cần duyệt' },
                         ].map((item) => (
                           <label key={item.value} className="flex cursor-pointer items-center gap-2.5 text-[14px] font-medium text-[#c1c6d7] transition hover:text-[#dde2f4]">
-                            <input
-                              className="h-3.5 w-3.5 rounded border-[#414754] bg-[#0d131f] text-[#adc7ff]"
-                              type="radio"
-                              name="student_status_filter"
-                              checked={studentStatusFilter === item.value}
-                              onChange={() => setStudentStatusFilter(item.value as StudentStatusFilter)}
-                            />
+                            <input className="h-3.5 w-3.5 rounded border-[#414754] bg-[#0d131f] text-[#adc7ff]" type="radio" name="enrollment_filter" checked={enrollmentFilter === item.value} onChange={() => setEnrollmentFilter(item.value as EnrollmentFilter)} />
                             {item.label}
                           </label>
                         ))}
                       </div>
                     </div>
-                  )}
 
-                  <div>
-                    <p className="mb-2.5 font-mono text-[11px] uppercase tracking-wide text-[#8b90a0]">Tổng quan</p>
-                    <div className="space-y-1.5 rounded-lg bg-[#080e1a] p-3 text-[13px] text-[#c1c6d7]">
-                      <div className="flex justify-between"><span>Tổng khóa</span><span className="text-[#dde2f4]">{courses.length}</span></div>
-                      {canStudy(user) && <div className="flex justify-between"><span>Đang học</span><span className="text-[#24dfba]">{activeCourseCount}</span></div>}
+                    {canStudy(user) && (
+                      <div>
+                        <p className="mb-2.5 font-mono text-[11px] uppercase tracking-wide text-[#8b90a0]">Trạng thái học</p>
+                        <div className="space-y-2.5">
+                          {[
+                            { value: 'all', label: 'Tất cả' },
+                            { value: 'not_enrolled', label: 'Chưa đăng ký' },
+                            { value: 'active', label: 'Đang học' },
+                            { value: 'pending', label: 'Chờ duyệt' },
+                          ].map((item) => (
+                            <label key={item.value} className="flex cursor-pointer items-center gap-2.5 text-[14px] font-medium text-[#c1c6d7] transition hover:text-[#dde2f4]">
+                              <input className="h-3.5 w-3.5 rounded border-[#414754] bg-[#0d131f] text-[#adc7ff]" type="radio" name="student_status_filter" checked={studentStatusFilter === item.value} onChange={() => setStudentStatusFilter(item.value as StudentStatusFilter)} />
+                              {item.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <p className="mb-2.5 font-mono text-[11px] uppercase tracking-wide text-[#8b90a0]">Tổng quan</p>
+                      <div className="space-y-1.5 rounded-lg bg-[#080e1a] p-3 text-[13px] text-[#c1c6d7]">
+                        <div className="flex justify-between"><span>Tổng khóa</span><span className="text-[#dde2f4]">{courses.length}</span></div>
+                        {canStudy(user) && <div className="flex justify-between"><span>Đang học</span><span className="text-[#24dfba]">{activeCourseCount}</span></div>}
+                      </div>
                     </div>
+                    <button
+                      className="self-end rounded-lg border border-[#adc7ff] px-3 py-2.5 font-mono text-[12px] font-bold text-[#adc7ff] transition hover:bg-[#adc7ff]/10 active:scale-95"
+                      type="button"
+                      onClick={() => {
+                        setQuery('');
+                        setEnrollmentFilter('all');
+                        setStudentStatusFilter('all');
+                        setSortMode('popular');
+                        setIsFilterOpen(false);
+                      }}
+                    >
+                      Xóa tất cả bộ lọc
+                    </button>
                   </div>
-                  <button
-                  className="self-end rounded-lg border border-[#adc7ff] px-3 py-2.5 font-mono text-[12px] font-bold text-[#adc7ff] transition hover:bg-[#adc7ff]/10 active:scale-95"
-                  type="button"
-                  onClick={() => {
-                    setQuery('');
-                    setEnrollmentFilter('all');
-                    setStudentStatusFilter('all');
-                    setSortMode('popular');
-                    setIsFilterOpen(false);
-                  }}
-                >
-                  Xóa tất cả bộ lọc
-                </button>
-              </div>
-              </div>
+                </div>
               )}
 
               {!isLoading && !filteredCourses.length && (
@@ -508,17 +470,12 @@ export function CourseCatalogPage() {
                   const badgeTone = index % 3 === 0 ? 'text-[#ffc080]' : index % 3 === 1 ? 'text-[#24dfba]' : 'text-[#adc7ff]';
                   const progress = progressByCourseId[course._id];
                   const progressPercent = progress?.progress_percent ?? 0;
+                  const isCompleted = isActiveEnrollment && progressPercent >= 100;
 
                   return (
                     <article key={course._id} className="group flex h-full flex-col rounded-xl border border-white/5 bg-[#1a202c] p-4 transition-all hover:border-[#adc7ff]/30">
                       <div className="relative mb-4 aspect-video overflow-hidden rounded-lg bg-[#242a37]">
-                        <a
-                          className="block h-full w-full"
-                          href={canOpenDetail ? lessonDetailUrl : '#'}
-                          onClick={(event) => {
-                            if (!canOpenDetail) event.preventDefault();
-                          }}
-                        >
+                        <a className="block h-full w-full" href={canOpenDetail ? lessonDetailUrl : '#'} onClick={(event) => { if (!canOpenDetail) event.preventDefault(); }}>
                           {thumbnailUrls[course._id] ? (
                             <div className="h-full w-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105" style={{ backgroundImage: `url(${thumbnailUrls[course._id]})` }} />
                           ) : (
@@ -558,13 +515,7 @@ export function CourseCatalogPage() {
                         )}
                       </div>
 
-                      <a
-                        className="block"
-                        href={canOpenDetail ? lessonDetailUrl : '#'}
-                        onClick={(event) => {
-                          if (!canOpenDetail) event.preventDefault();
-                        }}
-                      >
+                      <a className="block" href={canOpenDetail ? lessonDetailUrl : '#'} onClick={(event) => { if (!canOpenDetail) event.preventDefault(); }}>
                         <h3 className="mb-2 text-[22px] font-semibold leading-7 text-[#dde2f4] transition-colors group-hover:text-[#adc7ff]">{course.title}</h3>
                         <p className="mb-4 line-clamp-2 flex-grow text-[14px] leading-6 text-[#c1c6d7]">
                           {course.description || 'Chưa có mô tả cho khóa học này.'}
@@ -574,12 +525,12 @@ export function CourseCatalogPage() {
                       <div className="mt-auto space-y-4">
                         {isActiveEnrollment && canStudy(user) && (
                           <div>
-                            <div className="mb-1.5 flex justify-between font-mono text-[11px] text-[#ffc080]">
+                            <div className={`mb-1.5 flex justify-between font-mono text-[11px] ${isCompleted ? 'text-[#24dfba]' : 'text-[#ffc080]'}`}>
                               <span>Trạng thái học</span>
-                              <span>Đang học</span>
+                              <span>{isCompleted ? 'Hoàn thành' : 'Đang học'}</span>
                             </div>
                             <div className="h-1.5 overflow-hidden rounded-full bg-[#2f3542]">
-                              <div className="h-full rounded-full bg-[#ffc080] transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+                              <div className={`h-full rounded-full transition-all duration-500 ${isCompleted ? 'bg-[#24dfba]' : 'bg-[#ffc080]'}`} style={{ width: `${progressPercent}%` }} />
                             </div>
                             <p className="mt-1 font-mono text-[11px] text-[#8b90a0]">
                               {progress ? `${progress.completed_lessons}/${progress.total_lessons} bài · ${progressPercent}% hoàn thành` : 'Đang cập nhật tiến độ...'}
