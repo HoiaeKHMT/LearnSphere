@@ -132,7 +132,7 @@ jobs:
       - name: ☁️ Sync build output lên S3
         run: |
           # Upload static assets với cache dài hạn (1 năm)
-          aws s3 sync LearnSphere_FE/dist/ s3://${{ secrets.S3_FE_BUCKET }}/ \
+          aws s3 sync LearnSphere_FE/dist/ s3://${{ secrets.S3_FE_BUCKET }} \
             --delete \
             --cache-control "public, max-age=31536000, immutable" \
             --exclude "index.html"
